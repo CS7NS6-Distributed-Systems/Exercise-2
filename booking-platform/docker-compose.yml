@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  # Flask App Service
+  booking-service:
+    build: ./booking-service
+    ports:
+      - "5000:5000"
+    depends_on:
+      - kafka
+      - redis
+      - cockroachdb
+      - mongodb
+
+  # Kafka Service
+  kafka:
+    image: bitnami/kafka:latest
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
+    depends_on:
+      - zookeeper
+
+  # Zookeeper (for Kafka)
+  zookeeper:
+    image: bitnami/zookeeper:latest
+    ports:
+      - "2181:2181"
+
+  # Redis Service
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+
+  # CockroachDB Service
+  cockroachdb:
+    image: cockroachdb/cockroach:latest
+    ports:
+      - "26257:26257"
+      - "8080:8080"
+    command: start-single-node --insecure
+
+  # MongoDB Service
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+
+  # NGINX Service (Load Balancer)
+  nginx:
+    image: nginx:latest
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - booking-service
