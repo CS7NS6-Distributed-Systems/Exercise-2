@@ -1,4 +1,5 @@
 services:
+  # Flask Booking container
   booking-service:
     build: ./booking-service
     ports:
@@ -17,34 +18,47 @@ services:
       - cockroachdb
       - mongodb
 
+  # kafka container
   kafka:
     image: bitnami/kafka:latest
     ports:
       - "${KAFKA_PORT}:9092"  # Internal port is fixed to 9092
     environment:
       - KAFKA_CFG_ZOOKEEPER_CONNECT=${ZOOKEEPER_HOST}:${ZOOKEEPER_PORT}
+    volumes:
+      - kafka_data:/bitnami/kafka
     depends_on:
       - zookeeper
 
+  # zookeeper container
   zookeeper:
     image: bitnami/zookeeper:latest
     ports:
       - "${ZOOKEEPER_PORT}:2181"  # Internal port is fixed to 2181
     environment:
       - ALLOW_ANONYMOUS_LOGIN=${ZOOKEEPER_ALLOW_ANONYMOUS_LOGIN}
+    volumes:
+      - zookeeper_data:/bitnami/zookeeper
 
+  # redis container
   redis:
     image: redis:latest
     ports:
       - "${REDIS_PORT}:6379"  # Internal port is fixed to 6379
+    volumes:
+      - redis_data:/data
 
+  # cockroachdb container
   cockroachdb:
     image: cockroachdb/cockroach:latest
     ports:
       - "${COCKROACHDB_PORT}:26257"  # Internal port is fixed to 26257
       - "${COCKROACHDB_ADMIN_PORT}:8080"  # Internal port is fixed to 8080
     command: start-single-node --insecure
+    volumes:
+      - cockroachdb_data:/cockroach/cockroach-data
 
+  # mongodb container
   mongodb:
     image: mongo:latest
     ports:
@@ -52,6 +66,7 @@ services:
     volumes:
       - mongodb_data:/data/db
 
+  # nginx container
   nginx:
     image: nginx:latest
     ports:
@@ -65,5 +80,16 @@ services:
     depends_on:
       - booking-service
 
+# persistent storage for all containers
 volumes:
   mongodb_data:
+  cockroachdb_data:
+  kafka_data:
+  zookeeper_data:
+  redis_data:
+
+logging:
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
