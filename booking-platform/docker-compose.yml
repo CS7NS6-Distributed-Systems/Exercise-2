@@ -22,11 +22,6 @@ services:
       - redis
       - cockroachdb
       - mongodb
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
 
   # kafka container
   # kafka:
