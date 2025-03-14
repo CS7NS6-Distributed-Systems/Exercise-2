@@ -10,13 +10,18 @@ services:
       - REDIS_PORT=${REDIS_PORT}
       - COCKROACHDB_HOST=${COCKROACHDB_HOST}
       - COCKROACHDB_PORT=${COCKROACHDB_PORT}
-      # - MONGODB_HOST=${MONGODB_HOST}
-      # - MONGODB_PORT=${MONGODB_PORT}
+      - MONGODB_HOST=${MONGODB_HOST}
+      - MONGODB_PORT=${MONGODB_PORT}
     depends_on:
       # - kafka
       - redis
       - cockroachdb
-      # - mongodb
+      - mongodb
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # kafka container
   # kafka:
@@ -59,12 +64,12 @@ services:
       - cockroachdb_data:/cockroach/cockroach-data
 
   # mongodb container
-  # mongodb:
-  #   image: mongo:latest
-  #   ports:
-  #     - "${MONGODB_PORT}:27017"  # Internal port is fixed to 27017
-  #   volumes:
-  #     - mongodb_data:/data/db
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "${MONGODB_PORT}:27017"  # Internal port is fixed to 27017
+    volumes:
+      - mongodb_data:/data/db
 
   # nginx container
   nginx:
@@ -84,12 +89,6 @@ services:
 volumes:
   mongodb_data:
   cockroachdb_data:
-  kafka_data:
-  zookeeper_data:
+  # kafka_data:
+  # zookeeper_data:
   redis_data:
-
-# logging:
-#   driver: "json-file"
-#   options:
-#     max-size: "10m"
-#     max-file: "3"
