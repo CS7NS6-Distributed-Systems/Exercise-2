@@ -23,6 +23,6 @@ mongo_db = mongo_client["booking_db"]
 # create a connection to redis client
 redis_client = redis.StrictRedis(
     host=os.getenv('REDIS_HOST'),
-    port=int(os.getenv('REDIS_HOST')),
+    port=int(os.getenv('REDIS_PORT')),
     decode_responses=True
 )
