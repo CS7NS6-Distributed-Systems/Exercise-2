@@ -1,20 +1,21 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_file
 from flask_bcrypt import Bcrypt
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
-from flask import send_file
 from functools import wraps
-
 import psycopg2
 from bson import ObjectId
 from pymongo.errors import PyMongoError
 from datetime import timedelta
 import io
-import json
+import logging
 
 from app.db import cockroach_conn, mongo_db, redis_client
 
 user_blueprint = Blueprint('user', __name__)
 bcrypt = Bcrypt()
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def session_required(fn):
     @wraps(fn)
@@ -37,7 +38,7 @@ def register():
         license_img = request.files.get('license_img')
 
         if not all([givennames, lastname, username, password, license_img]):
-            return jsonify({"error": f"All fields including are required, {[givennames, lastname, username, password, license_img]}"}), 400
+            return jsonify({"error": "All fields including license image are required"}), 400
 
         hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
 
@@ -52,8 +53,7 @@ def register():
 
         with cockroach_conn.cursor() as cursor:
             cursor.execute("SELECT username FROM users WHERE username = %s", (username,))
-            existing_user = cursor.fetchone()
-            if existing_user:
+            if cursor.fetchone():
                 return jsonify({"error": "Username already exists"}), 400
 
             cursor.execute(
@@ -66,9 +66,12 @@ def register():
 
     except (psycopg2.Error, PyMongoError) as e:
         cockroach_conn.rollback()
-        license_collection.delete_one({"_id": inserted_license.inserted_id})  # Rollback MongoDB insert
+        if 'inserted_license' in locals():
+            license_collection.delete_one({"_id": inserted_license.inserted_id})
+        logger.error(f"Database error: {str(e)}")
         return jsonify({"error": "Database error", "details": str(e)}), 500
     except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
         return jsonify({"error": "An unexpected error occurred", "details": str(e)}), 500
 
 @user_blueprint.route('/login', methods=['POST'])
@@ -81,36 +84,36 @@ def login():
             return jsonify({"error": "All fields are required"}), 400
 
         with cockroach_conn.cursor() as cursor:
-            cursor.execute(
-                'SELECT password FROM users WHERE username = %s', (username,)
-            )
-            user_record = cursor.fetchone()
+            cursor.execute('SELECT password FROM users WHERE username = %s', (username,))
+            user_password_hash = cursor.fetchone()
 
-        if not user_record:
+        if not user_password_hash:
             return jsonify({"error": "User does not exist"}), 401
 
-        password_hash = user_record[0]
-        if bcrypt.check_password_hash(password_hash, password):
+        if bcrypt.check_password_hash(user_password_hash[0], password):
             token = create_access_token(identity=username, expires_delta=timedelta(hours=1))
-            redis_client.setex(f"session: {username}", 3600, json.dumps(token))
+            redis_client.setex(f"session: {username}", 3600, token)
             return jsonify({"message": "Login successful", "access_token": token}), 200
 
         return jsonify({"error": "Invalid username or password"}), 401
 
     except psycopg2.Error as e:
+        logger.error(f"Database error: {str(e)}")
         return jsonify({"error": "Database error", "details": str(e)}), 500
     except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
         return jsonify({"error": "An unexpected error occurred", "details": str(e)}), 500
-    
+
 @user_blueprint.route('/logout', methods=['POST'])
-@jwt_required()
+@session_required
 def logout():
     try:
         username = get_jwt_identity()
         redis_client.delete(f"session: {username}")
-        return jsonify({"message": "logout successful"})
+        return jsonify({"message": "Logout successful"}), 200
     except Exception as e:
-        return jsonify({"error":"An error occured", "details": str(e)}), 500
+        logger.error(f"Unexpected error: {str(e)}")
+        return jsonify({"error": "An error occurred", "details": str(e)}), 500
 
 @user_blueprint.route('/profile', methods=['GET'])
 @session_required
@@ -122,33 +125,45 @@ def profile():
                 'SELECT givennames, lastname, username, license_image_id FROM users WHERE username = %s', (username,)
             )
             user_record = cursor.fetchone()
+
         if not user_record:
             return jsonify({"error": "User not found"}), 404
-        
+
         givennames, lastname, username, license_image_id = user_record
         return jsonify({
             "givennames": givennames,
             "lastname": lastname,
             "username": username,
             "license_image_id": license_image_id,
-        })
+        }), 200
     except Exception as e:
-        return jsonify({"error":"An error occured", "details": str(e)}), 500
-    
-@user_blueprint.route('licenses/<license_image_id>', methods=['GET'])
+        logger.error(f"Unexpected error: {str(e)}")
+        return jsonify({"error": "An error occurred", "details": str(e)}), 500
+
+@user_blueprint.route('/licenses/<license_image_id>', methods=['GET'])
 @session_required
 def get_license_image(license_image_id):
     try:
+        username = get_jwt_identity()
+        with cockroach_conn.cursor() as cursor:
+            cursor.execute(
+                'SELECT license_image_id FROM users WHERE username = %s', (username,)
+            )
+            user_license_id = cursor.fetchone()
+
+        if not user_license_id or user_license_id[0] != license_image_id:
+            return jsonify({"error": "Unauthorized access"}), 403
+
         license_data = mongo_db['user_licenses'].find_one({"_id": ObjectId(license_image_id)})
         if not license_data:
             return jsonify({"error": "License image not found"}), 404
-        
-        image_type = str(license_data["filename"]).split('.')[-1]
+
+        image_type = license_data["filename"].split('.')[-1]
         return send_file(
             io.BytesIO(license_data["license_image"]),
             mimetype=f'image/{image_type}',
             as_attachment=False
         )
     except Exception as e:
-        return jsonify({"error":"An error occured", "details": str(e)}), 500
-
+        logger.error(f"Unexpected error: {str(e)}")
+        return jsonify({"error": "An error occurred", "details": str(e)}), 500
