@@ -71,6 +71,7 @@ services:
       - "${MONGODB_PORT}:27017"  # Internal port is fixed to 27017
     volumes:
       - mongodb_data:/data/db
+      - ./init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js
 
   # nginx container
   nginx:
