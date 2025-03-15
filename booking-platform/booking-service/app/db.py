@@ -1,5 +1,6 @@
 import psycopg2
 from pymongo import MongoClient
+import redis
 import os
 
 # create a connection to cockroachdb database 'booking'
@@ -18,3 +19,10 @@ mongo_client = MongoClient(
 
 # extract the database 'booking_db'
 mongo_db = mongo_client["booking_db"]
+
+# create a connection to redis client
+redis_client = redis.StrictRedis(
+    host=os.getenv('REDIS_HOST'),
+    port=int(os.getenv('REDIS_HOST')),
+    decode_responses=True
+)
