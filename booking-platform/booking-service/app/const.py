@@ -20,3 +20,8 @@ ERROR_UNEXPECTED = "An unexpected error occurred"
 SUCCESS_REGISTRATION = "Registration successful"
 SUCCESS_LOGIN = "Login successful"
 SUCCESS_LOGOUT = "Logout successful"
+
+# Rate limiting
+RATE_LIMIT_LOGIN = "5 per minute"
+RATE_LIMIT_REGISTER = "3 per minute"
+RATE_LIMIT_GLOBAL = ["200 per day", "50 per hour"]

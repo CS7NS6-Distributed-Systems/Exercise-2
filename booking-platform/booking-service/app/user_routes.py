@@ -9,6 +9,7 @@ from datetime import timedelta
 import io
 import logging
 
+from app import limiter
 from app.db import cockroach_conn, mongo_db, redis_client
 from app.const import (  # Import constants
     SESSION_EXPIRY_SECONDS,
@@ -26,6 +27,8 @@ from app.const import (  # Import constants
     SUCCESS_REGISTRATION,
     SUCCESS_LOGIN,
     SUCCESS_LOGOUT,
+    RATE_LIMIT_LOGIN,
+    RATE_LIMIT_REGISTER,
 )
 
 user_blueprint = Blueprint('user', __name__)
@@ -47,6 +50,7 @@ def session_required(fn):
     return decorated_fn
 
 @user_blueprint.route('/register', methods=['POST'])
+@limiter.limit(RATE_LIMIT_REGISTER)
 def register():
     try:
         givennames = request.form.get('givennames')
@@ -93,6 +97,7 @@ def register():
         return jsonify({"error": ERROR_UNEXPECTED, "details": str(e)}), 500
 
 @user_blueprint.route('/login', methods=['POST'])
+@limiter.limit(RATE_LIMIT_LOGIN)
 def login():
     try:
         username = request.form.get('username')
