@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Road Map Viewer</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        #map {
+            flex-grow: 1;
+            width: 100%;
+        }
+        .road-info {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: white;
+            padding: 10px 15px;
+            border-radius: 5px;
+            box-shadow: 0 0 8px rgba(0,0,0,0.4);
+            z-index: 1000;
+            display: none;
+            max-width: 300px;
+        }
+        .highlighted-road {
+            stroke-width: 8;
+            stroke-opacity: 0.8;
+            animation: pulse 1.5s infinite alternate;
+        }
+        .map-controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 8px rgba(0,0,0,0.4);
+            z-index: 1000;
+        }
+        .map-controls label {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+        }
+        .map-controls input[type="checkbox"] {
+            margin-right: 8px;
+        }
+        .loading-indicator {
+            display: none;
+            margin-left: 10px;
+            font-size: 12px;
+            color: #666;
+        }
+        @keyframes pulse {
+            from { stroke-opacity: 0.6; }
+            to { stroke-opacity: 0.9; }
+        }
+    </style>
+</head>
+<body>
+    <div id="road-info" class="road-info"></div>
+    <div id="map"></div>
+
+    <div class="map-controls">
+        <label>
+            <input type="checkbox" id="show-all-roads" />
+            Show All Roads
+            <span id="loading-roads" class="loading-indicator">Loading...</span>
+        </label>
+    </div>
+
+    <script>
+        // Initialize the map centered at Dublin
+        const map = L.map('map').setView([53.35, -6.26], 13);
+
+        // Add OpenStreetMap tiles
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            maxZoom: 19
+        }).addTo(map);
+
+        // Create a layer for the highlighted road
+        let highlightedRoadLayer = L.layerGroup().addTo(map);
+
+        // Create a layer for all roads
+        let allRoadsLayer = L.layerGroup();
+
+        // Road style based on type
+        function getRoadStyle(roadType, highlighted = false) {
+            const styles = {
+                'motorway': { color: '#e34a33', weight: highlighted ? 7 : 5 },
+                'trunk': { color: '#fc8d59', weight: highlighted ? 6 : 4 },
+                'primary': { color: '#fdbb84', weight: highlighted ? 5 : 3 },
+                'secondary': { color: '#fdd49e', weight: highlighted ? 4 : 2.5 },
+                'tertiary': { color: '#fee8c8', weight: highlighted ? 3.5 : 2 },
+                'residential': { color: '#f7f7f7', weight: highlighted ? 3 : 1.5 },
+                'default': { color: '#969696', weight: highlighted ? 3 : 1 }
+            };
+
+            const style = styles[roadType] || styles['default'];
+
+            if (highlighted) {
+                style.opacity = 1;
+                style.className = 'highlighted-road';
+            }
+
+            return style;
+        }
+
+        // Function to handle map clicks and detect roads
+        map.on('click', async function(e) {
+            const latlng = e.latlng;
+            const radius = 10; // meters
+
+            try {
+                // Query roads near the clicked point
+                const response = await fetch('/osm/roads/search', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        point: [latlng.lat, latlng.lng],
+                        radius: radius,
+                        limit: 1
+                    })
+                });
+
+                const data = await response.json();
+
+                // Clear previous highlighted road
+                highlightedRoadLayer.clearLayers();
+                document.getElementById('road-info').style.display = 'none';
+
+                if (data.roads && data.roads.length > 0) {
+                    const road = data.roads[0];
+                    displayRoadDetails(road.id);
+                }
+            } catch (error) {
+                console.error('Error detecting road:', error);
+            }
+        });
+
+        // Function to display road details
+        async function displayRoadDetails(roadId) {
+            try {
+                const response = await fetch(`/osm/roads/${roadId}`);
+                const roadDetail = await response.json();
+
+                if (roadDetail.geometry) {
+                    // Clear previous highlighted road
+                    highlightedRoadLayer.clearLayers();
+
+                    // Parse the geometry if it's a string, otherwise use as is
+                    const geometry = typeof roadDetail.geometry === 'string'
+                        ? JSON.parse(roadDetail.geometry)
+                        : roadDetail.geometry;
+
+                    // Apply style based on road type
+                    const style = getRoadStyle(roadDetail.road_type, true);
+
+                    // Create GeoJSON object if we have just the LineString part
+                    let geoJsonData = geometry;
+                    if (geometry.type && !geometry.features) {
+                        geoJsonData = {
+                            "type": "Feature",
+                            "geometry": geometry,
+                            "properties": {}
+                        };
+                    }
+
+                    // Create the GeoJSON layer with the properly formatted data
+                    const roadLine = L.geoJSON(geoJsonData, {
+                        style: style,
+                        onEachFeature: (feature, layer) => {
+                            // You can add additional interactivity here if needed
+                            if (layer.setStyle) {
+                                layer.setStyle(style);
+                            }
+                        }
+                    });
+
+                    // Add the road to the highlight layer
+                    highlightedRoadLayer.addLayer(roadLine);
+
+                    // Fit map to road bounds with padding
+                    map.fitBounds(roadLine.getBounds(), {
+                        padding: [50, 50],
+                        maxZoom: 18
+                    });
+
+                    // Extract useful information from tags if available
+                    let speedLimit = '';
+                    let additionalInfo = '';
+
+                    if (roadDetail.tags) {
+                        const tags = typeof roadDetail.tags === 'string'
+                            ? JSON.parse(roadDetail.tags)
+                            : roadDetail.tags;
+
+                        speedLimit = tags.maxspeed || '';
+
+                        // Extract other useful information
+                        if (tags.lanes) additionalInfo += `<p><strong>Lanes:</strong> ${tags.lanes}</p>`;
+                        if (tags.surface) additionalInfo += `<p><strong>Surface:</strong> ${tags.surface}</p>`;
+                        if (tags.width) additionalInfo += `<p><strong>Width:</strong> ${tags.width}</p>`;
+                    }
+
+                    // Show road info
+                    const roadInfo = document.getElementById('road-info');
+                    roadInfo.innerHTML = `
+                        <h3>${roadDetail.name || 'Unnamed road'}</h3>
+                        <p><strong>Type:</strong> ${roadDetail.road_type || 'Unknown'}</p>
+                        ${roadDetail.country ? '<p><strong>Country:</strong> ' + roadDetail.country + '</p>' : ''}
+                        ${roadDetail.region ? '<p><strong>Region:</strong> ' + roadDetail.region + '</p>' : ''}
+                        ${speedLimit ? '<p><strong>Speed limit:</strong> ' + speedLimit + '</p>' : ''}
+                        ${additionalInfo}
+                        <p><small>Click anywhere else to close</small></p>
+                    `;
+                    roadInfo.style.display = 'block';
+
+                    // Log the geometry to check what was processed
+                    console.log("Road geometry:", geometry);
+                }
+            } catch (error) {
+                console.error(`Error fetching details for road ${roadId}:`, error);
+            }
+        }
+
+        // Function to load and display all roads
+        async function loadAllRoads() {
+            // Show loading indicator
+            document.getElementById('loading-roads').style.display = 'inline';
+
+            try {
+                // Fetch all roads within current map bounds
+                const bounds = map.getBounds();
+                const southWest = bounds.getSouthWest();
+                const northEast = bounds.getNorthEast();
+
+                const response = await fetch('/osm/roads/in-bounds', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        bounds: [
+                            southWest.lat,
+                            southWest.lng,
+                            northEast.lat,
+                            northEast.lng
+                        ],
+                        limit: 1000  // Limit the number of roads to prevent performance issues
+                    })
+                });
+
+                const data = await response.json();
+
+                // Clear existing roads
+                allRoadsLayer.clearLayers();
+
+                // Add each road to the layer
+                if (data.roads && data.roads.length > 0) {
+                    data.roads.forEach(road => {
+                        if (road.geometry) {
+                            try {
+                                // Parse the geometry if it's a string
+                                const geometry = typeof road.geometry === 'string'
+                                    ? JSON.parse(road.geometry)
+                                    : road.geometry;
+
+                                // Apply style based on road type
+                                const style = getRoadStyle(road.road_type);
+
+                                // Create GeoJSON object
+                                let geoJsonData = geometry;
+                                if (geometry.type && !geometry.features) {
+                                    geoJsonData = {
+                                        "type": "Feature",
+                                        "geometry": geometry,
+                                        "properties": {
+                                            name: road.name,
+                                            road_type: road.road_type,
+                                            id: road.id
+                                        }
+                                    };
+                                }
+
+                                // Create the GeoJSON layer
+                                const roadLine = L.geoJSON(geoJsonData, {
+                                    style: style,
+                                    onEachFeature: (feature, layer) => {
+                                        // Add click event to show road details
+                                        layer.on('click', () => {
+                                            displayRoadDetails(road.id);
+                                        });
+
+                                        // Add tooltip with road name
+                                        if (road.name) {
+                                            layer.bindTooltip(road.name);
+                                        }
+                                    }
+                                });
+
+                                // Add the road to the layer
+                                allRoadsLayer.addLayer(roadLine);
+                            } catch (error) {
+                                console.error(`Error processing road ${road.id}:`, error);
+                            }
+                        }
+                    });
+
+                    console.log(`Displayed ${data.roads.length} roads on the map`);
+                }
+            } catch (error) {
+                console.error('Error loading roads:', error);
+            } finally {
+                // Hide loading indicator
+                document.getElementById('loading-roads').style.display = 'none';
+            }
+        }
+
+        // Handle checkbox change
+        document.getElementById('show-all-roads').addEventListener('change', function(e) {
+            if (e.target.checked) {
+                // Load and show all roads
+                loadAllRoads();
+                map.addLayer(allRoadsLayer);
+            } else {
+                // Hide all roads
+                map.removeLayer(allRoadsLayer);
+            }
+        });
+
+        // Update roads when map is moved (if checkbox is checked)
+        map.on('moveend', function() {
+            if (document.getElementById('show-all-roads').checked) {
+                loadAllRoads();
+            }
+        });
+    </script>
+</body>
+</html>
