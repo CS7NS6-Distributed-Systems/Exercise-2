@@ -57,12 +57,18 @@ services:
   cockroachdb:
     image: cockroachdb/cockroach:latest
     ports:
-      - "${COCKROACHDB_PORT}:26257"  # Internal port is fixed to 26257
-      - "${COCKROACHDB_ADMIN_PORT}:8080"  # Internal port is fixed to 8080
+      - "${COCKROACHDB_PORT}:26257"
+      - "${COCKROACHDB_ADMIN_PORT}:8080"
     command: start-single-node --insecure
     volumes:
       - cockroachdb_data:/cockroach/cockroach-data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD", "cockroach", "sql", "--insecure", "-e", "SELECT 1"]
+      interval: 10s
+      retries: 5
+      start_period: 20s
+
 
   # mongodb container
   mongodb:
