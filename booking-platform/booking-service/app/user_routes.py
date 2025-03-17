@@ -11,7 +11,7 @@ import logging
 
 from app import limiter
 from app.db import cockroach_conn, mongo_db, redis_client
-from app.const import (  # Import constants
+from app.const import ( 
     SESSION_EXPIRY_SECONDS,
     TOKEN_EXPIRY_HOURS,
     COCKROACHDB_USERS_TABLE,
@@ -31,7 +31,7 @@ from app.const import (  # Import constants
     RATE_LIMIT_REGISTER,
 )
 
-user_blueprint = Blueprint('user', __name__)
+user_blueprint = Blueprint("user", __name__)
 bcrypt = Bcrypt()
 
 # Configure logging
@@ -49,25 +49,25 @@ def session_required(fn):
         return fn(*args, **kwargs)
     return decorated_fn
 
-@user_blueprint.route('/register', methods=['POST'])
+@user_blueprint.route("/register", methods=["POST"])
 @limiter.limit(RATE_LIMIT_REGISTER)
 def register():
     try:
-        givennames = request.form.get('givennames')
-        lastname = request.form.get('lastname')
-        username = request.form.get('username')
-        password = request.form.get('password')
-        license_img = request.files.get('license_img')
+        givennames = request.form.get("givennames")
+        lastname = request.form.get("lastname")
+        username = request.form.get("username")
+        password = request.form.get("password")
+        license_img = request.files.get("license_img")
 
         if not all([givennames, lastname, username, password, license_img]):
             return jsonify({"error": ERROR_MISSING_FIELDS}), 400
 
-        hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+        hashed_password = bcrypt.generate_password_hash(password).decode("utf-8")
 
-        file_extension = license_img.filename.split('.')[-1]
+        file_extension = license_img.filename.split(".")[-1]
         license_data = {
-            'filename': f'{username}_license.{file_extension}',
-            'license_image': license_img.read()
+            "filename": f"{username}_license.{file_extension}",
+            "license_image": license_img.read()
         }
         license_collection = mongo_db[MONGODB_LICENSES_COLLECTION]
         inserted_license = license_collection.insert_one(license_data)
@@ -79,7 +79,7 @@ def register():
                 return jsonify({"error": ERROR_USER_EXISTS}), 400
 
             cursor.execute(
-                f'INSERT INTO {COCKROACHDB_USERS_TABLE} (givennames, lastname, username, password, license_image_id) VALUES (%s, %s, %s, %s, %s)',
+                f"INSERT INTO {COCKROACHDB_USERS_TABLE} (givennames, lastname, username, password, license_image_id) VALUES (%s, %s, %s, %s, %s)",
                 (givennames, lastname, username, hashed_password, license_img_id)
             )
             cockroach_conn.commit()
@@ -88,7 +88,7 @@ def register():
 
     except (psycopg2.Error, PyMongoError) as e:
         cockroach_conn.rollback()
-        if 'inserted_license' in locals():
+        if "inserted_license" in locals():
             license_collection.delete_one({"_id": inserted_license.inserted_id})
         logger.error(f"Database error: {str(e)}")
         return jsonify({"error": ERROR_DATABASE, "details": str(e)}), 500
@@ -96,18 +96,18 @@ def register():
         logger.error(f"Unexpected error: {str(e)}")
         return jsonify({"error": ERROR_UNEXPECTED, "details": str(e)}), 500
 
-@user_blueprint.route('/login', methods=['POST'])
+@user_blueprint.route("/login", methods=["POST"])
 @limiter.limit(RATE_LIMIT_LOGIN)
 def login():
     try:
-        username = request.form.get('username')
-        password = request.form.get('password')
+        username = request.form.get("username")
+        password = request.form.get("password")
 
         if not (username and password):
             return jsonify({"error": ERROR_MISSING_FIELDS}), 400
 
         with cockroach_conn.cursor() as cursor:
-            cursor.execute(f'SELECT password FROM {COCKROACHDB_USERS_TABLE} WHERE username = %s', (username,))
+            cursor.execute(f"SELECT password FROM {COCKROACHDB_USERS_TABLE} WHERE username = %s", (username,))
             user_password_hash = cursor.fetchone()
 
         if not user_password_hash:
@@ -127,7 +127,7 @@ def login():
         logger.error(f"Unexpected error: {str(e)}")
         return jsonify({"error": ERROR_UNEXPECTED, "details": str(e)}), 500
 
-@user_blueprint.route('/logout', methods=['POST'])
+@user_blueprint.route("/logout", methods=["POST"])
 @session_required
 def logout():
     try:
@@ -138,14 +138,14 @@ def logout():
         logger.error(f"Unexpected error: {str(e)}")
         return jsonify({"error": ERROR_UNEXPECTED, "details": str(e)}), 500
 
-@user_blueprint.route('/profile', methods=['GET'])
+@user_blueprint.route("/profile", methods=["GET"])
 @session_required
 def profile():
     try:
         username = get_jwt_identity()
         with cockroach_conn.cursor() as cursor:
             cursor.execute(
-                f'SELECT givennames, lastname, username, license_image_id FROM {COCKROACHDB_USERS_TABLE} WHERE username = %s', (username,)
+                f"SELECT givennames, lastname, username, license_image_id FROM {COCKROACHDB_USERS_TABLE} WHERE username = %s", (username,)
             )
             user_record = cursor.fetchone()
 
@@ -163,14 +163,14 @@ def profile():
         logger.error(f"Unexpected error: {str(e)}")
         return jsonify({"error": ERROR_UNEXPECTED, "details": str(e)}), 500
 
-@user_blueprint.route('/licenses/<license_image_id>', methods=['GET'])
+@user_blueprint.route("/licenses/<license_image_id>", methods=["GET"])
 @session_required
 def get_license_image(license_image_id):
     try:
         username = get_jwt_identity()
         with cockroach_conn.cursor() as cursor:
             cursor.execute(
-                f'SELECT license_image_id FROM {COCKROACHDB_USERS_TABLE} WHERE username = %s', (username,)
+                f"SELECT license_image_id FROM {COCKROACHDB_USERS_TABLE} WHERE username = %s", (username,)
             )
             user_license_id = cursor.fetchone()
 
@@ -181,10 +181,10 @@ def get_license_image(license_image_id):
         if not license_data:
             return jsonify({"error": ERROR_USER_NOT_FOUND}), 404
 
-        image_type = license_data["filename"].split('.')[-1]
+        image_type = license_data["filename"].split(".")[-1]
         return send_file(
             io.BytesIO(license_data["license_image"]),
-            mimetype=f'image/{image_type}',
+            mimetype=f"image/{image_type}",
             as_attachment=False
         )
     except Exception as e:

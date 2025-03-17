@@ -1,6 +1,8 @@
+import os
+
 # Session and Token Constants
-SESSION_EXPIRY_SECONDS = 3600  # 1 hour
-TOKEN_EXPIRY_HOURS = 1
+SESSION_EXPIRY_SECONDS = os.getenv("SESSION_EXPIRY_SECONDS", 3600)
+TOKEN_EXPIRY_HOURS = os.getenv("TOKEN_EXPIRY_HOURS", 1)
 
 # Database Constants
 COCKROACHDB_USERS_TABLE = "users"
