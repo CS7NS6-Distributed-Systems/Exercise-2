@@ -22,6 +22,7 @@ services:
       - redis
       - cockroachdb
       - mongodb
+    restart: unless-stopped
 
   # kafka container
   # kafka:
@@ -52,6 +53,7 @@ services:
       - "${REDIS_PORT}:6379"  # Internal port is fixed to 6379
     volumes:
       - redis_data:/data
+    restart: unless-stopped
 
   # cockroachdb container
   cockroachdb:
@@ -68,6 +70,7 @@ services:
       interval: 10s
       retries: 5
       start_period: 20s
+    restart: unless-stopped
 
 
   # mongodb container
@@ -78,6 +81,7 @@ services:
     volumes:
       - mongodb_data:/data/db
       - ./init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js
+    restart: unless-stopped
 
   # nginx container
   nginx:
@@ -92,6 +96,7 @@ services:
       - NGINX_PORT=${NGINX_PORT}
     depends_on:
       - booking-service
+    restart: unless-stopped
 
 # persistent storage for all containers
 volumes:
