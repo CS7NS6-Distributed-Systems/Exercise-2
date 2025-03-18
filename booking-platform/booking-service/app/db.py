@@ -1,4 +1,5 @@
 import psycopg2
+from psycopg2 import pool
 from pymongo import MongoClient
 import redis
 import os
@@ -20,7 +21,7 @@ redis_client = redis.StrictRedis(
 )
 
 # cockroach connection pools
-cockroach_pool = psycopg2.pool.SimpleConnectionPool(
+cockroach_pool = pool.SimpleConnectionPool(
     1, 10,
     dbname=os.getenv("COCKROACHDB_DATABASE", "booking"),
     user=os.getenv("COCKROACHDB_USER", "root"),
