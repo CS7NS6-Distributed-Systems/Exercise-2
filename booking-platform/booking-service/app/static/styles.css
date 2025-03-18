@@ -1,0 +1,130 @@
+body {
+    margin: 0;
+    padding: 0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+#map {
+    flex-grow: 1;
+    width: 100%;
+}
+.road-info {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: white;
+    padding: 10px 15px;
+    border-radius: 5px;
+    box-shadow: 0 0 8px rgba(0,0,0,0.4);
+    z-index: 1000;
+    display: none;
+    max-width: 300px;
+}
+.highlighted-road {
+    stroke-width: 8;
+    stroke-opacity: 0.8;
+    animation: pulse 1.5s infinite alternate;
+}
+.map-controls {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: white;
+    padding: 10px;
+    border-radius: 5px;
+    box-shadow: 0 0 8px rgba(0,0,0,0.4);
+    z-index: 1000;
+}
+.map-controls label {
+    display: flex;
+    align-items: center;
+    margin-bottom: 5px;
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+}
+.map-controls input[type="checkbox"] {
+    margin-right: 8px;
+}
+.loading-indicator {
+    display: none;
+    margin-left: 10px;
+    font-size: 12px;
+    color: #666;
+}
+@keyframes pulse {
+    from { stroke-opacity: 0.6; }
+    to { stroke-opacity: 0.9; }
+}
+
+/* Route Planning Sidebar Styles */
+.route-sidebar {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background: white;
+    padding: 15px;
+    border-radius: 5px;
+    box-shadow: 0 0 8px rgba(0,0,0,0.4);
+    z-index: 1000;
+    width: 300px;
+    max-width: 90%;
+    font-family: Arial, sans-serif;
+}
+.route-sidebar h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 16px;
+    color: #333;
+}
+.route-input-group {
+    margin-bottom: 12px;
+}
+.route-input-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+    font-size: 14px;
+}
+.route-input-group input {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+.route-actions {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 15px;
+}
+.route-actions button {
+    padding: 8px 15px;
+    border: none;
+    border-radius: 4px;
+    background-color: #4a89dc;
+    color: white;
+    cursor: pointer;
+    font-size: 14px;
+}
+.route-actions button:hover {
+    background-color: #3672c5;
+}
+.route-actions button:disabled {
+    background-color: #a0b5d8;
+    cursor: not-allowed;
+}
+.route-details {
+    margin-top: 15px;
+    font-size: 14px;
+}
+.route-details p {
+    margin: 5px 0;
+}
+.autoComplete_wrapper {
+    width: 100%;
+}
+.error {
+    color: #e31a1c;
+}

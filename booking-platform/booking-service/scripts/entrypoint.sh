@@ -14,8 +14,8 @@ for i in {1..30}; do
 done
 
 # Run the OSM import script in the background
-echo "Starting OSM data import in the background..."
-python -m app.osm_import &
+# echo "Starting OSM data import in the background..."
+# python -m app.osm_import &
 
 # Start the Flask application
 echo "Starting the Flask application..."

@@ -18,3 +18,6 @@ limiter = Limiter(
 
 from app.user_routes import user_blueprint
 app.register_blueprint(user_blueprint, url_prefix='/user')
+
+from app.osm_routes import osm_blueprint
+app.register_blueprint(osm_blueprint, url_prefix='/osm')

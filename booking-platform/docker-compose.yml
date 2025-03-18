@@ -107,6 +107,7 @@ services:
       - "${NGINX_PORT}:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./booking-service/app/static:/app/static
     environment:
       - BOOKING_SERVICE_HOST=${BOOKING_SERVICE_HOST}
       - BOOKING_SERVICE_PORT=${BOOKING_SERVICE_PORT}
