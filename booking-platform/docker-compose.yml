@@ -12,16 +12,20 @@ services:
       - COCKROACHDB_PORT=${COCKROACHDB_PORT}
       - MONGODB_HOST=${MONGODB_HOST}
       - MONGODB_PORT=${MONGODB_PORT}
-    depends_on:
-      # - kafka
-      - redis
-      - cockroachdb
-      - mongodb
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+    depends_on:
+      # kafka:
+      cockroachdb:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
 
   # kafka container
   # kafka:
@@ -52,16 +56,31 @@ services:
       - "${REDIS_PORT}:6379"  # Internal port is fixed to 6379
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 5
+      start_period: 10s
+      timeout: 3s
+    restart: unless-stopped
 
   # cockroachdb container
   cockroachdb:
     image: cockroachdb/cockroach:latest
     ports:
-      - "${COCKROACHDB_PORT}:26257"  # Internal port is fixed to 26257
-      - "${COCKROACHDB_ADMIN_PORT}:8080"  # Internal port is fixed to 8080
+      - "${COCKROACHDB_PORT}:26257"
+      - "${COCKROACHDB_ADMIN_PORT}:8080"
     command: start-single-node --insecure
     volumes:
       - cockroachdb_data:/cockroach/cockroach-data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD", "cockroach", "sql", "--insecure", "-e", "SELECT 1"]
+      interval: 10s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
 
   # mongodb container
   mongodb:
@@ -70,6 +89,14 @@ services:
       - "${MONGODB_PORT}:27017"  # Internal port is fixed to 27017
     volumes:
       - mongodb_data:/data/db
+      - ./init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.runCommand({ ping: 1 })"]
+      interval: 10s
+      retries: 5
+      start_period: 15s
+      timeout: 5s
+    restart: unless-stopped
 
   # nginx container
   nginx:
@@ -84,6 +111,7 @@ services:
       - NGINX_PORT=${NGINX_PORT}
     depends_on:
       - booking-service
+    restart: unless-stopped
 
 # persistent storage for all containers
 volumes:
