@@ -56,6 +56,12 @@ services:
       - "${REDIS_PORT}:6379"  # Internal port is fixed to 6379
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 5
+      start_period: 10s
+      timeout: 3s
     restart: unless-stopped
 
   # cockroachdb container
@@ -84,6 +90,12 @@ services:
     volumes:
       - mongodb_data:/data/db
       - ./init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.runCommand({ ping: 1 })"]
+      interval: 10s
+      retries: 5
+      start_period: 15s
+      timeout: 5s
     restart: unless-stopped
 
   # nginx container
