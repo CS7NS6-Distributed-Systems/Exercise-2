@@ -10,7 +10,7 @@ import io
 import logging
 
 from app import limiter
-from app.db import cockroach_conn, mongo_db, redis_client
+from app.db import get_cockroach_connection, release_cockroach_connection, mongo_db, redis_client
 from app.const import ( 
     SESSION_EXPIRY_SECONDS,
     TOKEN_EXPIRY_HOURS,
@@ -72,6 +72,7 @@ def register():
         license_collection = mongo_db[MONGODB_LICENSES_COLLECTION]
         inserted_license = license_collection.insert_one(license_data)
         license_img_id = str(inserted_license.inserted_id)
+        cockroach_conn = get_cockroach_connection()
 
         with cockroach_conn.cursor() as cursor:
             cursor.execute(f"SELECT username FROM {COCKROACHDB_USERS_TABLE} WHERE username = %s", (username,))
@@ -95,6 +96,8 @@ def register():
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         return jsonify({"error": ERROR_UNEXPECTED, "details": str(e)}), 500
+    finally:
+        release_cockroach_connection(cockroach_conn)
 
 @user_blueprint.route("/login", methods=["POST"])
 @limiter.limit(RATE_LIMIT_LOGIN)
@@ -106,6 +109,7 @@ def login():
         if not (username and password):
             return jsonify({"error": ERROR_MISSING_FIELDS}), 400
 
+        cockroach_conn = get_cockroach_connection()
         with cockroach_conn.cursor() as cursor:
             cursor.execute(f"SELECT password FROM {COCKROACHDB_USERS_TABLE} WHERE username = %s", (username,))
             user_password_hash = cursor.fetchone()
@@ -126,6 +130,8 @@ def login():
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         return jsonify({"error": ERROR_UNEXPECTED, "details": str(e)}), 500
+    finally:
+        release_cockroach_connection(cockroach_conn)
 
 @user_blueprint.route("/logout", methods=["POST"])
 @session_required
@@ -143,6 +149,7 @@ def logout():
 def profile():
     try:
         username = get_jwt_identity()
+        cockroach_conn = get_cockroach_connection()
         with cockroach_conn.cursor() as cursor:
             cursor.execute(
                 f"SELECT givennames, lastname, username, license_image_id FROM {COCKROACHDB_USERS_TABLE} WHERE username = %s", (username,)
@@ -162,12 +169,15 @@ def profile():
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         return jsonify({"error": ERROR_UNEXPECTED, "details": str(e)}), 500
+    finally:
+        release_cockroach_connection(cockroach_conn)
 
 @user_blueprint.route("/licenses/<license_image_id>", methods=["GET"])
 @session_required
 def get_license_image(license_image_id):
     try:
         username = get_jwt_identity()
+        cockroach_conn = get_cockroach_connection()
         with cockroach_conn.cursor() as cursor:
             cursor.execute(
                 f"SELECT license_image_id FROM {COCKROACHDB_USERS_TABLE} WHERE username = %s", (username,)
@@ -190,3 +200,5 @@ def get_license_image(license_image_id):
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         return jsonify({"error": ERROR_UNEXPECTED, "details": str(e)}), 500
+    finally:
+        release_cockroach_connection(cockroach_conn)

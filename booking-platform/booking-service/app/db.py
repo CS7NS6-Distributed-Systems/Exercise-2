@@ -2,28 +2,6 @@ import psycopg2
 from pymongo import MongoClient
 import redis
 import os
-import time
-
-# Retry logic for CockroachDB connection
-MAX_RETRIES = 5
-RETRY_DELAY = 5  # 5 seconds between retries
-
-for attempt in range(MAX_RETRIES):
-    try:
-        cockroach_conn = psycopg2.connect(
-            dbname=os.getenv('COCKROACHDB_DATABASE', 'booking'),
-            user=os.getenv('COCKROACHDB_USER', 'root'),
-            password=os.getenv('COCKROACHDB_PASSWORD', ''),
-            host=os.getenv('COCKROACHDB_HOST', 'cockroachdb'),
-            port=os.getenv('COCKROACHDB_PORT', '26257')
-        )
-        print("Connected to CockroachDB")
-        break
-    except psycopg2.OperationalError as e:
-        print(f"Waiting for CockroachDB to be ready... ({attempt+1}/{MAX_RETRIES})")
-        time.sleep(RETRY_DELAY)
-else:
-    raise Exception("Failed to connect to CockroachDB after multiple attempts")
 
 # create a connection to mongo client
 mongo_client = MongoClient(
@@ -40,3 +18,25 @@ redis_client = redis.StrictRedis(
     port=int(os.getenv("REDIS_PORT")),
     decode_responses=True
 )
+
+# cockroach connection pools
+cockroach_pool = psycopg2.pool.SimpleConnectionPool(
+    1, 10,
+    dbname=os.getenv("COCKROACHDB_DATABASE", "booking"),
+    user=os.getenv("COCKROACHDB_USER", "root"),
+    password=os.getenv("COCKROACHDB_PASSWORD", ""),
+    host=os.getenv("COCKROACHDB_HOST", "cockroachdb"),
+    port=os.getenv("COCKROACHDB_PORT", "26257"),
+)
+
+# function to get a cockroach connection from pool
+def get_cockroach_connection():
+    return cockroach_pool.getconn()
+
+# function to release the cockroach connection to pool
+def release_cockroach_connection(conn):
+    try:
+        if conn:
+            cockroach_pool.putconn(conn)
+    except psycopg2.DatabaseError as e:
+        print(f"Error releasing CockroachDB connection: {e}")
