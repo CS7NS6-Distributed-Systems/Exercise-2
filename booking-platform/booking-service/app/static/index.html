@@ -7,7 +7,8 @@
     <!-- External CSS libraries -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
     <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tarekraafat/autocomplete.js@10.2.7/dist/css/autoComplete.min.css">
+
+    <!-- Remove autoComplete.js CSS since we're not using it -->
 
     <!-- Custom CSS -->
     <link rel="stylesheet" href="styles.css">
@@ -15,7 +16,8 @@
     <!-- External JS libraries -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tarekraafat/autocomplete.js@10.2.7/dist/autoComplete.min.js"></script>
+
+    <!-- Remove the autoComplete.js library since we're implementing our own -->
 </head>
 <body>
     <div id="road-info" class="road-info"></div>
@@ -26,15 +28,13 @@
         <h3>Route Planning</h3>
         <div class="route-input-group">
             <label for="route-origin">Origin:</label>
-            <div class="autoComplete_wrapper">
-                <input id="route-origin" type="text" placeholder="Enter origin location">
-            </div>
+            <input id="route-origin" type="text" placeholder="Enter origin location (min 3 characters)">
+            <!-- The autocomplete results div will be added dynamically -->
         </div>
         <div class="route-input-group">
             <label for="route-destination">Destination:</label>
-            <div class="autoComplete_wrapper">
-                <input id="route-destination" type="text" placeholder="Enter destination location">
-            </div>
+            <input id="route-destination" type="text" placeholder="Enter destination location (min 3 characters)">
+            <!-- The autocomplete results div will be added dynamically -->
         </div>
         <div class="route-actions">
             <button id="find-route-btn">Find Route</button>

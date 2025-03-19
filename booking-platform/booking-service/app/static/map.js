@@ -12,6 +12,9 @@ let highlightedRoadLayer = L.layerGroup().addTo(map);
 
 // Create a layer for all roads
 let allRoadsLayer = L.layerGroup();
+// Add variable to store all roads data in memory
+let allRoadsData = null;
+let allRoadsLoaded = false;
 
 // Create layers for routing
 let routeLayer = L.layerGroup().addTo(map);
@@ -162,45 +165,62 @@ async function displayRoadDetails(roadId) {
 
 // Function to load and display all roads
 async function loadAllRoads() {
+    // If we already loaded the roads data, just display from memory
+    if (allRoadsLoaded && allRoadsData) {
+        displayRoadsFromMemory();
+        return;
+    }
+
     // Show loading indicator
     document.getElementById('loading-roads').style.display = 'inline';
 
     try {
-        // Fetch all roads within current map bounds
-        const bounds = map.getBounds();
-        const southWest = bounds.getSouthWest();
-        const northEast = bounds.getNorthEast();
-
-        const response = await fetch('/osm/roads/in-bounds', {
-            method: 'POST',
+        const response = await fetch('/osm/get-all-roads', {
+            method: 'GET',
             headers: {
                 'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                bounds: [
-                    southWest.lat,
-                    southWest.lng,
-                    northEast.lat,
-                    northEast.lng
-                ],
-                limit: 1000  // Limit the number of roads to prevent performance issues
-            })
+            }
         });
 
         const data = await response.json();
 
-        // Clear existing roads
-        allRoadsLayer.clearLayers();
+        // Store the data in memory
+        allRoadsData = data.roads;
+        allRoadsLoaded = true;
 
-        // Add each road to the layer
-        if (data.roads && data.roads.length > 0) {
-            data.roads.forEach(road => {
-                if (road.geometry) {
+        // Display the roads from memory
+        displayRoadsFromMemory();
+
+        console.log(`Loaded ${data.roads.length} roads into memory`);
+    } catch (error) {
+        console.error('Error loading roads:', error);
+    } finally {
+        // Hide loading indicator
+        document.getElementById('loading-roads').style.display = 'none';
+    }
+}
+
+// Function to display roads from memory
+function displayRoadsFromMemory() {
+    // Clear existing roads
+    allRoadsLayer.clearLayers();
+
+    // Make sure we have data
+    if (!allRoadsData || !allRoadsData.length) {
+        console.warn('No road data available to display');
+        return;
+    }
+
+    // Add each road to the layer
+    allRoadsData.forEach(road => {
+        if (road.segments) {
+            road.segments.forEach(segment => {
+                if (segment.geometry) {
                     try {
                         // Parse the geometry if it's a string
-                        const geometry = typeof road.geometry === 'string'
-                            ? JSON.parse(road.geometry)
-                            : road.geometry;
+                        const geometry = typeof segment.geometry === 'string'
+                            ? JSON.parse(segment.geometry)
+                            : segment.geometry;
 
                         // Apply style based on road type
                         const style = getRoadStyle(road.road_type);
@@ -238,19 +258,14 @@ async function loadAllRoads() {
                         // Add the road to the layer
                         allRoadsLayer.addLayer(roadLine);
                     } catch (error) {
-                        console.error(`Error processing road ${road.id}:`, error);
+                        console.error(`Error processing road segment for ${road.id}:`, error);
                     }
                 }
             });
-
-            console.log(`Displayed ${data.roads.length} roads on the map`);
         }
-    } catch (error) {
-        console.error('Error loading roads:', error);
-    } finally {
-        // Hide loading indicator
-        document.getElementById('loading-roads').style.display = 'none';
-    }
+    });
+
+    console.log(`Displayed ${allRoadsData.length} roads on the map from memory`);
 }
 
 // Handle checkbox change
@@ -260,15 +275,17 @@ document.getElementById('show-all-roads').addEventListener('change', function(e)
         loadAllRoads();
         map.addLayer(allRoadsLayer);
     } else {
-        // Hide all roads
+        // Hide all roads but keep data in memory
         map.removeLayer(allRoadsLayer);
     }
 });
 
-// Update roads when map is moved (if checkbox is checked)
+// Remove the moveend event handler that reloads roads when map is moved
+// Replace with a version that only displays roads from memory if checkbox is checked
 map.on('moveend', function() {
-    if (document.getElementById('show-all-roads').checked) {
-        loadAllRoads();
+    if (document.getElementById('show-all-roads').checked && allRoadsLoaded) {
+        // Just make sure roads are displayed (no new request)
+        map.addLayer(allRoadsLayer);
     }
 });
 
@@ -279,91 +296,157 @@ let originCoords = null;
 let destCoords = null;
 let currentRoute = null;
 
-// Initialize Nominatim geocoding autocomplete for origin
-const originAutocomplete = new autoComplete({
-    selector: "#route-origin",
-    placeHolder: "Enter origin location",
-    data: {
-        src: async (query) => {
-            try {
-                const source = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=5`);
-                const data = await source.json();
-                return data;
-            } catch (error) {
-                console.error("Error fetching origin suggestions:", error);
-                return [];
-            }
-        },
-        keys: ["display_name"],
-        cache: false
-    },
-    resultsList: {
-        element: (list, data) => {
-            if (!data.results.length) {
-                const message = document.createElement("div");
-                message.setAttribute("class", "no_result");
-                message.innerHTML = `<span>Found No Results for "${data.query}"</span>`;
-                list.prepend(message);
-            }
-        },
-        noResults: true,
-    },
-    resultItem: {
-        highlight: true
-    },
-    events: {
-        input: {
-            selection: (event) => {
-                const selection = event.detail.selection.value;
-                originAutocomplete.input.value = selection.display_name;
-                originCoords = [selection.lat, selection.lon];
-            }
-        }
-    }
+// Initialize the autocomplete functionality directly
+document.addEventListener('DOMContentLoaded', function() {
+    // Set up origin autocomplete
+    setupAutocomplete('route-origin', function(item) {
+        originCoords = [item.lat, item.lon];
+        document.getElementById('route-origin').value = item.display_name;
+    });
+
+    // Set up destination autocomplete
+    setupAutocomplete('route-destination', function(item) {
+        destCoords = [item.lat, item.lon];
+        document.getElementById('route-destination').value = item.display_name;
+    });
 });
 
-// Initialize Nominatim geocoding autocomplete for destination
-const destAutocomplete = new autoComplete({
-    selector: "#route-destination",
-    placeHolder: "Enter destination location",
-    data: {
-        src: async (query) => {
-            try {
-                const source = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=5`);
-                const data = await source.json();
-                return data;
-            } catch (error) {
-                console.error("Error fetching destination suggestions:", error);
-                return [];
-            }
-        },
-        keys: ["display_name"],
-        cache: false
-    },
-    resultsList: {
-        element: (list, data) => {
-            if (!data.results.length) {
-                const message = document.createElement("div");
-                message.setAttribute("class", "no_result");
-                message.innerHTML = `<span>Found No Results for "${data.query}"</span>`;
-                list.prepend(message);
-            }
-        },
-        noResults: true,
-    },
-    resultItem: {
-        highlight: true
-    },
-    events: {
-        input: {
-            selection: (event) => {
-                const selection = event.detail.selection.value;
-                destAutocomplete.input.value = selection.display_name;
-                destCoords = [selection.lat, selection.lon];
-            }
-        }
+// Simple cache for geocoding results
+const geocodingCache = {};
+
+// Function to set up autocomplete on an input element
+function setupAutocomplete(inputId, selectionCallback) {
+    const input = document.getElementById(inputId);
+    const resultsContainerId = `${inputId}-results`;
+
+    // Create results container if it doesn't exist
+    let resultsContainer = document.getElementById(resultsContainerId);
+    if (!resultsContainer) {
+        resultsContainer = document.createElement('div');
+        resultsContainer.id = resultsContainerId;
+        resultsContainer.className = 'autocomplete-results';
+        input.parentNode.appendChild(resultsContainer);
     }
-});
+
+    let debounceTimer;
+
+    // Add input event listener
+    input.addEventListener('input', function() {
+        clearTimeout(debounceTimer);
+        const query = this.value.trim();
+
+        // Clear results if input is too short
+        if (query.length < 3) {
+            resultsContainer.innerHTML = '';
+            resultsContainer.style.display = 'none';
+            return;
+        }
+
+        // Show loading indicator
+        resultsContainer.innerHTML = '<div class="loading-item">Searching locations...</div>';
+        resultsContainer.style.display = 'block';
+
+        // Debounce the search - wait 300ms before actually searching
+        debounceTimer = setTimeout(async function() {
+            try {
+                const results = await searchLocations(query);
+                displayResults(results, resultsContainer, selectionCallback);
+            } catch (error) {
+                resultsContainer.innerHTML = `<div class="error-item">Error: ${error.message}</div>`;
+            }
+        }, 300);
+    });
+
+    // Hide results when clicking outside
+    document.addEventListener('click', function(e) {
+        if (e.target !== input && !resultsContainer.contains(e.target)) {
+            resultsContainer.style.display = 'none';
+        }
+    });
+
+    // Show results again when focusing on input
+    input.addEventListener('focus', function() {
+        const query = this.value.trim();
+        if (query.length >= 3 && resultsContainer.innerHTML) {
+            resultsContainer.style.display = 'block';
+        }
+    });
+}
+
+// Function to search locations using Nominatim API
+async function searchLocations(query) {
+    console.log("Searching for:", query);
+
+    // Check cache first
+    const cacheKey = query.toLowerCase();
+    if (geocodingCache[cacheKey]) {
+        console.log("Using cached results");
+        return geocodingCache[cacheKey];
+    }
+
+    // Construct the URL with proper parameters
+    const params = new URLSearchParams({
+        format: 'json',
+        q: query,
+        limit: 5,
+        addressdetails: 1,
+        "_": new Date().getTime() // Cache buster
+    });
+
+    const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
+    console.log("Sending request to:", url);
+
+    // Make request to Nominatim API
+    try {
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error(`API Error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log("Received results:", data.length);
+
+        // Cache the results
+        geocodingCache[cacheKey] = data;
+
+        return data;
+    } catch (error) {
+        console.error("Search error:", error);
+        throw error;
+    }
+}
+
+// Function to display the search results
+function displayResults(results, container, selectionCallback) {
+    if (results.length === 0) {
+        container.innerHTML = '<div class="no-results">No locations found</div>';
+        return;
+    }
+
+    let html = '';
+    results.forEach(item => {
+        html += `<div class="result-item" data-lat="${item.lat}" data-lon="${item.lon}">${item.display_name}</div>`;
+    });
+
+    container.innerHTML = html;
+
+    // Add click event listeners to results
+    container.querySelectorAll('.result-item').forEach(el => {
+        el.addEventListener('click', function() {
+            const lat = this.getAttribute('data-lat');
+            const lon = this.getAttribute('data-lon');
+
+            // Find the full item from results
+            const selectedItem = results.find(r => r.lat === lat && r.lon === lon);
+
+            if (selectedItem) {
+                selectionCallback(selectedItem);
+                container.style.display = 'none';
+            }
+        });
+    });
+}
 
 // Find route button handler
 document.getElementById('find-route-btn').addEventListener('click', async function() {
