@@ -57,6 +57,10 @@ def register_form():
 def login_form():
     return render_template("login.html")
 
+@user_blueprint.route("/profile", methods=["GET"])
+def profile():
+    return render_template("profile.html")
+
 @user_blueprint.route("/register", methods=["POST"])
 @limiter.limit(RATE_LIMIT_REGISTER)
 def register():
@@ -156,9 +160,9 @@ def logout():
         logger.error(f"Unexpected error: {str(e)}")
         return jsonify({"error": ERROR_UNEXPECTED, "details": str(e)}), 500
 
-@user_blueprint.route("/profile", methods=["GET"])
+@user_blueprint.route("/get-profile", methods=["GET"])
 @session_required
-def profile():
+def get_profile():
     try:
         username = get_jwt_identity()
         cockroach_conn = get_cockroach_connection()

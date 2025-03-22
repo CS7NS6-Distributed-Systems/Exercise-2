@@ -29,7 +29,7 @@
             const passwordInput = document.getElementById("password");
             passwordInput.type = this.checked ? "text" : "password";
         });
-        
+
         document.getElementById("loginForm").addEventListener("submit", async function (event) {
             event.preventDefault();
 
@@ -53,8 +53,9 @@
                     if (response.ok) {
                         messageDiv.textContent = result.message;
                         messageDiv.classList.add("success");
+                        sessionStorage.setItem("access_token", result.access_token);
 
-                        window.location.href = "/";
+                        window.location.href = "/user/profile";
                     } else {
                         messageDiv.textContent = result.error || "An error occurred";
                         messageDiv.classList.add("error");

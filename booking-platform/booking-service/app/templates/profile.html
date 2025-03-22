@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>User Profile</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='form_style.css') }}">
+</head>
+<body>
+    <h1>User Profile</h1>
+    <div id="profileContainer" class="message success"></div>
+    <div id="authButtonContainer"></div>
+
+    <script>
+        async function fetchProfile() {
+            const token = sessionStorage.getItem("access_token");
+            const container = document.getElementById("profileContainer");
+    
+            if (!token) {
+                container.textContent = "You must be logged in.";
+                showAuthButton(false);
+                return;
+            }
+    
+            try {
+                const response = await fetch("/user/get-profile", {
+                    headers: {
+                        "Authorization": "Bearer " + token
+                    }
+                });
+    
+                const data = await response.json();
+    
+                if (response.ok) {
+                    container.innerHTML = `
+                        <p><strong>Given Names:</strong> ${data.givennames}</p>
+                        <p><strong>Last Name:</strong> ${data.lastname}</p>
+                        <p><strong>Username:</strong> ${data.username}</p>
+                        <p><strong>License Image:</strong> 
+                            <button onclick="viewLicense('${data.license_image_id}')">View License</button>
+                        </p>
+
+                    `;
+                    showAuthButton(true);
+                } else {
+                    container.classList.remove("success");
+                    container.classList.add("error");
+                    container.textContent = data.error || "Unable to load profile.";
+                    showAuthButton(false);
+                }
+            } catch (error) {
+                console.error("Error fetching profile:", error);
+                container.classList.remove("success");
+                container.classList.add("error");
+                container.textContent = "Unexpected error occurred.";
+                showAuthButton(false);
+            }
+        }
+
+        async function viewLicense(licenseId) {
+            const token = sessionStorage.getItem("access_token");
+                
+            try {
+                const response = await fetch(`/user/licenses/${licenseId}`, {
+                    headers: {
+                        "Authorization": "Bearer " + token
+                    }
+                });
+            
+                if (!response.ok) {
+                    alert("Unable to load license image.");
+                    return;
+                }
+            
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                window.open(url, "_blank");
+            } catch (error) {
+                console.error("Error fetching license image:", error);
+                alert("An unexpected error occurred.");
+            }
+        }
+        
+    
+        function showAuthButton(isLoggedIn) {
+            const authContainer = document.getElementById("authButtonContainer");
+            authContainer.innerHTML = "";
+
+            if (isLoggedIn) {
+                const logoutBtn = document.createElement("button");
+                logoutBtn.textContent = "Logout";
+                logoutBtn.onclick = async () => {
+                    const token = sessionStorage.getItem("access_token");
+                
+                    try {
+                        const response = await fetch("/user/logout", {
+                            method: "POST",
+                            headers: {
+                                "Authorization": "Bearer " + token
+                            }
+                        });
+                    
+                        const result = await response.json();
+                    
+                        if (response.ok) {
+                            console.log(result.message);
+                        } else {
+                            console.warn("Logout failed:", result.error);
+                        }
+                    } catch (error) {
+                        console.error("Error calling logout:", error);
+                    }
+                
+                    sessionStorage.removeItem("access_token");
+                    window.location.href = "/user/login";
+                };
+                authContainer.appendChild(logoutBtn);
+            } else {
+                const loginBtn = document.createElement("button");
+                loginBtn.textContent = "Login";
+                loginBtn.onclick = () => window.location.href = "/user/login";
+                authContainer.appendChild(loginBtn);
+            }
+        }
+
+    
+        window.onload = fetchProfile;
+    </script>
+    
+</body>
+</html>
