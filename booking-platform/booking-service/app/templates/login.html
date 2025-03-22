@@ -15,6 +15,9 @@
 
         <label for="password">Password:</label>
         <input type="password" id="password" name="password" required>
+        <label>
+            <input type="checkbox" id="togglePassword"> Show Password
+        </label>
 
         <input type="submit" value="Login">
     </form>
@@ -22,6 +25,11 @@
     <p>Don't have an account? <a href="/user/register">Register here</a>.</p>
 
     <script>
+        document.getElementById("togglePassword").addEventListener("change", function () {
+            const passwordInput = document.getElementById("password");
+            passwordInput.type = this.checked ? "text" : "password";
+        });
+        
         document.getElementById("loginForm").addEventListener("submit", async function (event) {
             event.preventDefault();
 

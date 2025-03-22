@@ -21,6 +21,9 @@
 
         <label for="password">Password:</label>
         <input type="password" id="password" name="password" required>
+        <label>
+            <input type="checkbox" id="togglePassword"> Show Password
+        </label>
 
         <label for="license_img">Upload License Image:</label>
         <input type="file" id="license_img" name="license_img" accept="image/*" required>
@@ -31,6 +34,11 @@
     <p>Already have an account? <a href="/user/login">Login here</a>.</p>
 
     <script>
+        document.getElementById("togglePassword").addEventListener("change", function () {
+            const passwordInput = document.getElementById("password");
+            passwordInput.type = this.checked ? "text" : "password";
+        });
+        
         document.getElementById("registerForm").addEventListener("submit", async function (event) {
             event.preventDefault();
 
