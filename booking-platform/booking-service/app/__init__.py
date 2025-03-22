@@ -16,5 +16,9 @@ limiter = Limiter(
     default_limits=os.getenv("RATE_LIMIT_GLOBAL", "200 per day, 50 per hour").split(", "),
 )
 
+@app.route('/')
+def hello():
+    return "Welcome to the Booking Platform!"
+
 from app.user_routes import user_blueprint
 app.register_blueprint(user_blueprint, url_prefix='/user')

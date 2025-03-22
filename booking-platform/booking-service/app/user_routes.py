@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, send_file
+from flask import Blueprint, request, jsonify, send_file, render_template
 from flask_bcrypt import Bcrypt
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from functools import wraps
@@ -49,10 +49,20 @@ def session_required(fn):
         return fn(*args, **kwargs)
     return decorated_fn
 
+@user_blueprint.route("/register", methods=["GET"])
+def register_form():
+    return render_template("register.html")
+
+@user_blueprint.route("/login", methods=["GET"])
+def login_form():
+    return render_template("login.html")
+
 @user_blueprint.route("/register", methods=["POST"])
 @limiter.limit(RATE_LIMIT_REGISTER)
 def register():
     try:
+        cockroach_conn = get_cockroach_connection()
+        
         givennames = request.form.get("givennames")
         lastname = request.form.get("lastname")
         username = request.form.get("username")
@@ -72,7 +82,6 @@ def register():
         license_collection = mongo_db[MONGODB_LICENSES_COLLECTION]
         inserted_license = license_collection.insert_one(license_data)
         license_img_id = str(inserted_license.inserted_id)
-        cockroach_conn = get_cockroach_connection()
 
         with cockroach_conn.cursor() as cursor:
             cursor.execute(f"SELECT username FROM {COCKROACHDB_USERS_TABLE} WHERE username = %s", (username,))
@@ -97,7 +106,8 @@ def register():
         logger.error(f"Unexpected error: {str(e)}")
         return jsonify({"error": ERROR_UNEXPECTED, "details": str(e)}), 500
     finally:
-        release_cockroach_connection(cockroach_conn)
+        if cockroach_conn:
+            release_cockroach_connection(cockroach_conn)
 
 @user_blueprint.route("/login", methods=["POST"])
 @limiter.limit(RATE_LIMIT_LOGIN)
@@ -105,11 +115,12 @@ def login():
     try:
         username = request.form.get("username")
         password = request.form.get("password")
+        cockroach_conn = get_cockroach_connection()
 
         if not (username and password):
-            return jsonify({"error": ERROR_MISSING_FIELDS}), 400
+            # return jsonify({"error": ERROR_MISSING_FIELDS}), 400
+            return jsonify({"error": f"vals u {username}; p {password}"}), 400
 
-        cockroach_conn = get_cockroach_connection()
         with cockroach_conn.cursor() as cursor:
             cursor.execute(f"SELECT password FROM {COCKROACHDB_USERS_TABLE} WHERE username = %s", (username,))
             user_password_hash = cursor.fetchone()
@@ -131,7 +142,8 @@ def login():
         logger.error(f"Unexpected error: {str(e)}")
         return jsonify({"error": ERROR_UNEXPECTED, "details": str(e)}), 500
     finally:
-        release_cockroach_connection(cockroach_conn)
+        if cockroach_conn:
+            release_cockroach_connection(cockroach_conn)
 
 @user_blueprint.route("/logout", methods=["POST"])
 @session_required
