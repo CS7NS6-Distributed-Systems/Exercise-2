@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>User Profile</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='form_style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='profile_style.css') }}">
 </head>
 <body>
     <h1>User Profile</h1>
@@ -58,7 +58,7 @@
 
         async function viewLicense(licenseId) {
             const token = sessionStorage.getItem("access_token");
-                
+
             try {
                 const response = await fetch(`/user/licenses/${licenseId}`, {
                     headers: {
@@ -79,7 +79,7 @@
                 alert("An unexpected error occurred.");
             }
         }
-        
+
     
         function showAuthButton(isLoggedIn) {
             const authContainer = document.getElementById("authButtonContainer");
