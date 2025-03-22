@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login</title>
+    <style>
+        .message {
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+        }
+        .message.success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .message.error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <h1>Login</h1>
+    <div id="message"></div>
+    <form id="loginForm">
+        <label for="username">Username:</label>
+        <input type="text" id="username" name="username" required>
+
+        <label for="password">Password:</label>
+        <input type="password" id="password" name="password" required>
+
+        <input type="submit" value="Login">
+    </form>
+
+    <p>Don't have an account? <a href="/user/register">Register here</a>.</p>
+
+    <script>
+        document.getElementById("loginForm").addEventListener("submit", async function (event) {
+            event.preventDefault();
+
+            const formData = new FormData();
+            formData.append("username", document.getElementById("username").value);
+            formData.append("password", document.getElementById("password").value);
+
+            try {
+                const response = await fetch("/user/login", {
+                    method: "POST",
+                    body: formData
+                });
+
+                const contentType = response.headers.get("content-type");
+                if (contentType && contentType.includes("application/json")) {
+                    const result = await response.json();
+
+                    const messageDiv = document.getElementById("message");
+                    messageDiv.className = "message";
+
+                    if (response.ok) {
+                        messageDiv.textContent = result.message;
+                        messageDiv.classList.add("success");
+
+                        window.location.href = "/";
+                    } else {
+                        messageDiv.textContent = result.error || "An error occurred";
+                        messageDiv.classList.add("error");
+                    }
+                } else {
+                    const text = await response.text();
+                    console.error("Server returned non-JSON response:", text);
+
+                    const messageDiv = document.getElementById("message");
+                    messageDiv.textContent = "An unexpected error occurred";
+                    messageDiv.classList.add("error");
+                }
+            } catch (error) {
+                console.error("Error:", error);
+                const messageDiv = document.getElementById("message");
+                messageDiv.textContent = "An unexpected error occurred";
+                messageDiv.classList.add("error");
+            }
+        });
+    </script>
+</body>
+</html>
