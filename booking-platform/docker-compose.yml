@@ -74,6 +74,9 @@ services:
     volumes:
       - cockroachdb_data:/cockroach/cockroach-data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./backup:/cockroach/cockroach-data/extern/1/backup
+      - ./init-cockroach.sh:/init-cockroach.sh
+    entrypoint: ["/bin/sh", "/init-cockroach.sh"]
     healthcheck:
       test: ["CMD", "cockroach", "sql", "--insecure", "-e", "SELECT 1"]
       interval: 10s
@@ -105,6 +108,7 @@ services:
       - "${NGINX_PORT}:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./booking-service/app/static:/app/static
     environment:
       - BOOKING_SERVICE_HOST=${BOOKING_SERVICE_HOST}
       - BOOKING_SERVICE_PORT=${BOOKING_SERVICE_PORT}
