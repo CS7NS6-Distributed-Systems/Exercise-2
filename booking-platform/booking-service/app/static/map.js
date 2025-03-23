@@ -21,6 +21,15 @@ let routeLayer = L.layerGroup().addTo(map);
 let dbRoadsLayer = L.layerGroup().addTo(map);
 let routeMarkers = L.layerGroup().addTo(map);
 
+// Track bookable road segments
+let bookableSegments = [];
+
+// Track route segments and info
+let routeSegmentIds = [];
+let routeRoadIds = []; // Add tracking for roads
+let routeDuration = 0;
+let routeDistance = 0;
+
 // Road style based on type
 function getRoadStyle(roadType, highlighted = false) {
     const styles = {
@@ -460,6 +469,12 @@ document.getElementById('find-route-btn').addEventListener('click', async functi
     dbRoadsLayer.clearLayers();
     routeMarkers.clearLayers();
 
+    // Clear route data
+    routeSegmentIds = [];
+    routeDuration = 0;
+    routeDistance = 0;
+
+    document.getElementById('route-booking-info').innerHTML = '<p>Finding route...</p>';
     document.getElementById('find-route-btn').disabled = true;
     document.getElementById('route-details').innerHTML = "Finding route...";
 
@@ -480,6 +495,10 @@ document.getElementById('find-route-btn').addEventListener('click', async functi
         // Get the first route
         currentRoute = data.routes[0];
         const geometry = currentRoute.geometry;
+
+        // Store route info
+        routeDuration = Math.round(currentRoute.duration / 60); // convert to minutes
+        routeDistance = Math.round(currentRoute.distance); // in meters
 
         // Add route to map in blue
         const routePath = L.geoJSON(geometry, {
@@ -512,8 +531,8 @@ document.getElementById('find-route-btn').addEventListener('click', async functi
 
         // Display route information
         document.getElementById('route-details').innerHTML = `
-            <p><strong>Distance:</strong> ${(currentRoute.distance / 1000).toFixed(2)} km</p>
-            <p><strong>Duration:</strong> ${Math.round(currentRoute.duration / 60)} minutes</p>
+            <p><strong>Distance:</strong> ${(routeDistance / 1000).toFixed(2)} km</p>
+            <p><strong>Duration:</strong> ${routeDuration} minutes</p>
             <p><strong>OSM nodes:</strong> ${nodeIds.length}</p>
         `;
 
@@ -524,11 +543,13 @@ document.getElementById('find-route-btn').addEventListener('click', async functi
             document.getElementById('route-details').innerHTML += `
                 <p class="error">No OSM node IDs found in the route</p>
             `;
+            document.getElementById('route-booking-info').innerHTML = '<p class="no-route">Cannot book this route - no road segments found</p>';
         }
 
     } catch (error) {
         console.error('Error finding route:', error);
         document.getElementById('route-details').innerHTML = `<p class="error">Error finding route: ${error.message}</p>`;
+        document.getElementById('route-booking-info').innerHTML = '<p class="no-route">Error finding route</p>';
     } finally {
         document.getElementById('find-route-btn').disabled = false;
     }
@@ -571,7 +592,8 @@ async function fetchRoadSegmentsByNodeIds(nodeIds) {
         const response = await fetch('/osm/road-segments/by-node-ids', {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
             },
             body: JSON.stringify({
                 node_ids: nodeIds
@@ -583,53 +605,110 @@ async function fetchRoadSegmentsByNodeIds(nodeIds) {
         }
 
         const data = await response.json();
+        console.log("API response:", data);  // Debug log to see the actual response
 
         // Clear previous db roads
         dbRoadsLayer.clearLayers();
+        routeSegmentIds = [];
+        routeRoadIds = []; // Clear road IDs
 
-        if (data.segments && data.segments.length > 0) {
-            // Add each segment to the map in red
-            data.segments.forEach(segment => {
-                if (segment.geometry) {
-                    try {
-                        // Parse the geometry if it's a string
-                        const geometry = typeof segment.geometry === 'string'
-                            ? JSON.parse(segment.geometry)
-                            : segment.geometry;
+        if (data.roads && data.roads.length > 0) {
+            console.log(`Found ${data.roads.length} roads with segments`);
+            let totalSegmentCount = 0;
 
-                        // Create GeoJSON layer with the segment
-                        const segmentLayer = L.geoJSON(geometry, {
-                            style: {
-                                color: '#e31a1c',
-                                weight: 6,
-                                opacity: 0.8
-                            },
-                            onEachFeature: (feature, layer) => {
-                                const tooltip = `${segment.road_name || 'Unnamed'}
-                                    (Road ID: ${segment.road_id}, Segment ID: ${segment.id})`;
-                                layer.bindTooltip(tooltip);
+            // Process each road
+            data.roads.forEach(road => {
+                console.log(`Processing road: ${road.name || 'Unnamed'} with ${road.segments?.length || 0} segments`);
+
+                // Store the road ID for booking
+                if (road.id && !routeRoadIds.includes(road.id)) {
+                    routeRoadIds.push(road.id);
+                }
+
+                if (road.segments && road.segments.length > 0) {
+                    totalSegmentCount += road.segments.length;
+
+                    // Process each segment in the road
+                    road.segments.forEach(segment => {
+                        if (segment.geometry) {
+                            try {
+                                // Parse the geometry if it's a string
+                                const geometry = typeof segment.geometry === 'string'
+                                    ? JSON.parse(segment.geometry)
+                                    : segment.geometry;
+
+                                // Save segment ID for reference (we'll use road IDs for booking)
+                                routeSegmentIds.push(segment.id);
+
+                                // Create a GeoJSON object for Leaflet if needed
+                                let geoJsonData = geometry;
+                                if (geometry.type && !geometry.features) {
+                                    geoJsonData = {
+                                        "type": "Feature",
+                                        "geometry": geometry,
+                                        "properties": {
+                                            road_id: road.id,
+                                            road_name: road.name,
+                                            segment_id: segment.id
+                                        }
+                                    };
+                                }
+
+                                // Create GeoJSON layer with the segment
+                                const segmentLayer = L.geoJSON(geoJsonData, {
+                                    style: {
+                                        color: '#e31a1c',
+                                        weight: 6,
+                                        opacity: 0.8
+                                    },
+                                    onEachFeature: (feature, layer) => {
+                                        const tooltipContent = `${road.name || 'Unnamed Road'}
+                                            (Road ID: ${road.id})`;
+                                        layer.bindTooltip(tooltipContent);
+                                    }
+                                });
+
+                                // Add to map layer
+                                dbRoadsLayer.addLayer(segmentLayer);
+                            } catch (error) {
+                                console.error(`Error processing segment geometry:`, error, segment);
                             }
-                        }).addTo(dbRoadsLayer);
-                    } catch (error) {
-                        console.error(`Error processing segment geometry:`, error);
-                    }
+                        } else {
+                            console.warn(`Segment ${segment.id} has no geometry`);
+                        }
+                    });
+                } else {
+                    console.warn(`Road ${road.id} has no segments`);
                 }
             });
 
-            // Update route details with DB coverage
-            const dbSegmentCount = data.segments.length;
-            const dbNodeCount = data.nodes_matched || 0;
-            const coveragePercent = (dbNodeCount / nodeIds.length) * 100;
+            // Make sure the road layer is added to the map
+            dbRoadsLayer.addTo(map);
 
-            document.getElementById('route-details').innerHTML += `
-                <p><strong>Database segments found:</strong> ${dbSegmentCount}</p>
-                <p><strong>Database nodes matched:</strong> ${dbNodeCount} of ${nodeIds.length}</p>
-                <p><strong>Coverage:</strong> ${coveragePercent.toFixed(1)}%</p>
+            // Update route details with DB coverage
+            const roadCount = data.roads.length;
+
+            // Show route booking option in sidebar
+            document.getElementById('route-booking-info').innerHTML = `
+                <div class="route-summary">
+                    <p><strong>Distance:</strong> ${(routeDistance / 1000).toFixed(2)} km</p>
+                    <p><strong>Duration:</strong> ${routeDuration} minutes</p>
+                    <p><strong>Roads:</strong> ${roadCount}</p>
+                </div>
+                <button class="btn btn-primary mt-2 w-100" id="book-route-btn">Book This Route</button>
             `;
+
+            // Add event listener for booking button
+            document.getElementById('book-route-btn').addEventListener('click', () => {
+                openRouteBookingModal();
+            });
+
         } else {
+            console.warn("No roads found in API response");
             document.getElementById('route-details').innerHTML += `
                 <p class="error">No matching road segments found in database</p>
             `;
+            document.getElementById('route-booking-info').innerHTML = '<p class="no-route">No bookable segments found</p>';
         }
 
     } catch (error) {
@@ -637,7 +716,19 @@ async function fetchRoadSegmentsByNodeIds(nodeIds) {
         document.getElementById('route-details').innerHTML += `
             <p class="error">Error fetching database segments: ${error.message}</p>
         `;
+        document.getElementById('route-booking-info').innerHTML = '<p class="no-route">Error loading segments</p>';
     }
+}
+
+// Open the booking modal for the entire route
+function openRouteBookingModal() {
+    if (routeRoadIds.length === 0) {
+        alert('No roads found for booking');
+        return;
+    }
+
+    // Trigger the booking modal with route information
+    showRouteBookingModal(routeRoadIds, routeDistance, routeDuration);
 }
 
 // Clear route button handler
@@ -646,16 +737,20 @@ document.getElementById('clear-route-btn').addEventListener('click', function() 
     document.getElementById('route-origin').value = '';
     document.getElementById('route-destination').value = '';
 
-    // Clear coordinates
+    // Clear coordinates and route data
     originCoords = null;
     destCoords = null;
     currentRoute = null;
+    routeSegmentIds = [];
+    routeDuration = 0;
+    routeDistance = 0;
 
     // Clear layers
     routeLayer.clearLayers();
     dbRoadsLayer.clearLayers();
     routeMarkers.clearLayers();
 
-    // Clear route details
+    // Clear route details and booking info
     document.getElementById('route-details').innerHTML = '';
+    document.getElementById('route-booking-info').innerHTML = '<p class="no-route">Find a route to book</p>';
 });

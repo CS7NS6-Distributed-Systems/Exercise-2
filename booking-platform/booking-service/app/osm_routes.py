@@ -241,7 +241,7 @@ def get_road_segments_by_node_ids():
             return jsonify({"error": "Empty node_ids list"}), 400
 
         # Limit the number of node IDs to prevent overloading the DB
-        max_ids = 10000
+        max_ids = 100000
         if len(node_ids) > max_ids:
             logger.warning(f"Too many node IDs ({len(node_ids)}), limiting to {max_ids}")
             node_ids = node_ids[:max_ids]
@@ -253,8 +253,8 @@ def get_road_segments_by_node_ids():
                 # Find all road segments that have any of the given node IDs as start or end nodes
                 query = """
                     SELECT rs.segment_id, rs.road_id, rs.osm_way_id, rs.geometry,
-                           rs.start_node_id, rs.end_node_id, rs.length_meters,
-                           r.name as road_name, r.road_type
+                           rs.start_node_id, rs.end_node_id, rs.length_meters, rs.tags,
+                           r.name as road_name, r.road_type, r.country
                     FROM road_segments rs
                     JOIN roads r ON rs.road_id = r.id
                     WHERE rs.start_node_id IN %s OR rs.end_node_id IN %s
@@ -266,11 +266,13 @@ def get_road_segments_by_node_ids():
 
                 # Format results
                 column_names = ["id", "road_id", "osm_way_id", "geometry",
-                               "start_node_id", "end_node_id", "length_meters",
-                               "road_name", "road_type"]
+                               "start_node_id", "end_node_id", "length_meters", "tags",
+                               "road_name", "road_type", "country"]
 
-                result = []
+                # Group segments by road
+                roads_dict = {}  # Use a dictionary to group segments by road_id
                 matched_nodes = set()  # Keep track of which nodes we actually found
+                total_length = 0
 
                 for segment in segments:
                     segment_dict = dict(zip(column_names, segment))
@@ -285,18 +287,57 @@ def get_road_segments_by_node_ids():
                     if segment_dict["geometry"]:
                         try:
                             segment_dict["geometry"] = json.loads(segment_dict["geometry"])
-                        except:
-                            pass
+                        except Exception as e:
+                            logger.warning(f"Failed to parse geometry JSON for segment {segment_dict['id']}: {str(e)}")
 
-                    result.append(segment_dict)
+                    # Parse tags JSON
+                    if segment_dict["tags"]:
+                        try:
+                            segment_dict["tags"] = json.loads(segment_dict["tags"])
+                        except Exception as e:
+                            logger.warning(f"Failed to parse tags JSON for segment {segment_dict['id']}: {str(e)}")
+
+                    # Add segment length to total
+                    if segment_dict["length_meters"]:
+                        total_length += segment_dict["length_meters"]
+
+                    # Add to the appropriate road in the dictionary
+                    road_id = segment_dict["road_id"]
+                    if road_id not in roads_dict:
+                        roads_dict[road_id] = {
+                            "id": road_id,
+                            "name": segment_dict["road_name"],
+                            "road_type": segment_dict["road_type"],
+                            "country": segment_dict["country"],
+                            "segments": []
+                        }
+
+                    # Remove road details from segment to avoid duplication
+                    segment_data = {k: v for k, v in segment_dict.items()
+                                  if k not in ["road_name", "road_type", "country"]}
+
+                    # Add to the road's segments array
+                    roads_dict[road_id]["segments"].append(segment_data)
+
+                # Convert the dictionary to a list
+                roads_list = list(roads_dict.values())
+
+                # Calculate segment count for each road
+                for road in roads_list:
+                    road["segment_count"] = len(road["segments"])
+
+                # Log some debug info
+                logger.info(f"Found {len(roads_list)} roads with {len(segments)} segments matching {len(matched_nodes)} nodes")
 
         # Return the results with statistics
         return jsonify({
-            "segments": result,
-            "count": len(result),
+            "roads": roads_list,
+            "count": len(segments),
+            "road_count": len(roads_list),
             "nodes_matched": len(matched_nodes),
             "nodes_requested": len(node_ids),
-            "coverage_percent": (len(matched_nodes) / len(node_ids) * 100) if node_ids else 0
+            "coverage_percent": (len(matched_nodes) / len(node_ids) * 100) if node_ids else 0,
+            "total_length_meters": total_length
         }), 200
 
     except Exception as e:

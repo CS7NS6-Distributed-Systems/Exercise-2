@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Booking Platform - User Authentication</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+        }
+        .tab-container {
+            display: flex;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            background-color: #eee;
+            border: none;
+        }
+        .tab.active {
+            background-color: #4a89dc;
+            color: white;
+        }
+        .form-container {
+            display: none;
+        }
+        .form-container.active {
+            display: block;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #4a89dc;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .error {
+            color: red;
+            margin-top: 10px;
+        }
+        .success {
+            color: green;
+            margin-top: 10px;
+        }
+        #userInfo {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Booking Platform</h1>
+
+        <div class="tab-container">
+            <button class="tab active" onclick="showTab('login')">Login</button>
+            <button class="tab" onclick="showTab('register')">Register</button>
+        </div>
+
+        <div id="login" class="form-container active">
+            <h2>Login</h2>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="loginUsername">Username</label>
+                    <input type="text" id="loginUsername" required>
+                </div>
+                <div class="form-group">
+                    <label for="loginPassword">Password</label>
+                    <input type="password" id="loginPassword" required>
+                </div>
+                <button type="submit">Login</button>
+            </form>
+            <div id="loginMessage"></div>
+        </div>
+
+        <div id="register" class="form-container">
+            <h2>Register</h2>
+            <form id="registerForm">
+                <div class="form-group">
+                    <label for="givennames">Given Names</label>
+                    <input type="text" id="givennames" required>
+                </div>
+                <div class="form-group">
+                    <label for="lastname">Last Name</label>
+                    <input type="text" id="lastname" required>
+                </div>
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" required>
+                </div>
+                <div class="form-group">
+                    <label for="licenseImage">License Image</label>
+                    <input type="file" id="licenseImage" accept="image/*" required>
+                </div>
+                <button type="submit">Register</button>
+            </form>
+            <div id="registerMessage"></div>
+        </div>
+
+        <div id="userInfo">
+            <h2>User Profile</h2>
+            <div id="profileData"></div>
+            <button id="logoutBtn" onclick="logout()">Logout</button>
+        </div>
+    </div>
+
+    <script>
+        // API Endpoint - adjust if needed
+        const API_URL = '/user';
+        let token = localStorage.getItem('accessToken');
+
+        // Check if user is logged in
+        if (token) {
+            fetchProfile();
+        }
+
+        function showTab(tabName) {
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.form-container').forEach(container => container.classList.remove('active'));
+
+            document.querySelector(`button.tab[onclick="showTab('${tabName}')"]`).classList.add('active');
+            document.getElementById(tabName).classList.add('active');
+        }
+
+        // Handle login form submission
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('loginUsername').value;
+            const password = document.getElementById('loginPassword').value;
+            const messageDiv = document.getElementById('loginMessage');
+
+            try {
+                const formData = new FormData();
+                formData.append('username', username);
+                formData.append('password', password);
+
+                const response = await fetch(`${API_URL}/login`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    messageDiv.className = 'success';
+                    messageDiv.textContent = data.message;
+
+                    // Save token and show profile
+                    localStorage.setItem('accessToken', data.access_token);
+                    token = data.access_token;
+                    fetchProfile();
+                } else {
+                    messageDiv.className = 'error';
+                    messageDiv.textContent = data.error || 'Login failed';
+                }
+            } catch (error) {
+                messageDiv.className = 'error';
+                messageDiv.textContent = 'An error occurred during login';
+                console.error('Login error:', error);
+            }
+        });
+
+        // Handle registration form submission
+        document.getElementById('registerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const givennames = document.getElementById('givennames').value;
+            const lastname = document.getElementById('lastname').value;
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const licenseImage = document.getElementById('licenseImage').files[0];
+            const messageDiv = document.getElementById('registerMessage');
+
+            try {
+                const formData = new FormData();
+                formData.append('givennames', givennames);
+                formData.append('lastname', lastname);
+                formData.append('username', username);
+                formData.append('password', password);
+                formData.append('license_img', licenseImage);
+
+                const response = await fetch(`${API_URL}/register`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    messageDiv.className = 'success';
+                    messageDiv.textContent = data.message + '. You can now log in.';
+
+                    // Clear the form
+                    document.getElementById('registerForm').reset();
+
+                    // Switch to login tab
+                    showTab('login');
+                } else {
+                    messageDiv.className = 'error';
+                    messageDiv.textContent = data.error || 'Registration failed';
+                    if (data.missing_fields) {
+                        messageDiv.textContent += ': ' + data.missing_fields.join(', ');
+                    }
+                }
+            } catch (error) {
+                messageDiv.className = 'error';
+                messageDiv.textContent = 'An error occurred during registration';
+                console.error('Registration error:', error);
+            }
+        });
+
+        // Fetch user profile data
+        async function fetchProfile() {
+            try {
+                const response = await fetch(`${API_URL}/profile`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('profileData').innerHTML = `
+                        <p><strong>Name:</strong> ${data.givennames} ${data.lastname}</p>
+                        <p><strong>Username:</strong> ${data.username}</p>
+                        <p><strong>License ID:</strong> ${data.license_image_id}</p>
+                        <img id="licenseImg" width="200" alt="Driver's License">
+                    `;
+
+                    // Show license image
+                    document.getElementById('licenseImg').src = `${API_URL}/licenses/${data.license_image_id}`;
+
+                    // Show user info section, hide forms
+                    document.getElementById('userInfo').style.display = 'block';
+                    document.getElementById('login').style.display = 'none';
+                    document.getElementById('register').style.display = 'none';
+                    document.querySelector('.tab-container').style.display = 'none';
+                } else if (response.status === 401) {
+                    // Token expired or invalid
+                    localStorage.removeItem('accessToken');
+                    token = null;
+                }
+            } catch (error) {
+                console.error('Error fetching profile:', error);
+            }
+        }
+
+        // Handle logout
+        async function logout() {
+            try {
+                const response = await fetch(`${API_URL}/logout`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.ok) {
+                    localStorage.removeItem('accessToken');
+                    token = null;
+                    document.getElementById('userInfo').style.display = 'none';
+                    document.querySelector('.tab-container').style.display = 'flex';
+                    document.getElementById('login').style.display = 'block';
+                    showTab('login');
+                }
+            } catch (error) {
+                console.error('Logout error:', error);
+            }
+        }
+    </script>
+</body>
+</html>

@@ -28,8 +28,6 @@ class RoadHandler(osmium.SimpleHandler):
         super(RoadHandler, self).__init__()
         self.conn = db_connection
         self.cursor = self.conn.cursor()
-        self.road_count = 0
-        self.segment_count = 0
         self.batch_size = 1000
         self.total_ways = 0
         self.skipped_ways = 0
@@ -37,15 +35,18 @@ class RoadHandler(osmium.SimpleHandler):
         self.node_count = 0
         self.node_cache = {}  # Cache to store node coordinates
 
-        # Dictionaries to hold roads by name and segments by road
-        self.road_groups = defaultdict(list)
-        self.road_ids = {}  # Maps road name to database ID
+        # Dictionaries to hold roads by key and their segments
+        self.road_groups = defaultdict(list)  # Maps logical road key to list of segments
         self.region_ids = {}  # Maps region name to database ID
 
         # Define which highway types to include
         self.highway_types = {
             'motorway'
         }
+
+        # Track stats for reporting
+        self.road_count = 0
+        self.segment_count = 0
 
     # Add a node method to collect node coordinates
     def node(self, n):
@@ -79,33 +80,20 @@ class RoadHandler(osmium.SimpleHandler):
 
             self.highways_found += 1
 
-            name = None
-            road_type = highway_type
-            country = None
-            region = None
-            tags = {}
+            # Extract tags for this way
+            tags = {tag.k: tag.v for tag in w.tags}
 
-            for tag in w.tags:
-                tags[tag.k] = tag.v
-                # Collect essential road attributes
-                if tag.k == 'name':
-                    name = tag.v
-                elif tag.k == 'addr:country':
-                    country = tag.v
-                elif tag.k == 'addr:region' or tag.k == 'addr:state':
-                    region = tag.v
-
-            # Ensure at least country is set (for Ireland roads)
-            if not country:
-                country = 'Ireland'
+            # Determine country and region
+            country = tags.get('addr:country', 'Ireland')  # Default to Ireland
+            region = tags.get('addr:region') or tags.get('addr:state', 'Unknown')
 
             # Get or create region ID
-            region_key = f"{region or 'Unknown'}, {country or 'Unknown'}"
+            region_key = f"{region}, {country}"
             if region_key not in self.region_ids:
                 # Check if region exists
                 self.cursor.execute(
                     "SELECT id FROM regions WHERE name = %s AND country = %s",
-                    (region or 'Unknown', country or 'Unknown')
+                    (region, country)
                 )
                 result = self.cursor.fetchone()
 
@@ -115,78 +103,146 @@ class RoadHandler(osmium.SimpleHandler):
                     # Insert new region
                     self.cursor.execute(
                         "INSERT INTO regions (name, country) VALUES (%s, %s) RETURNING id",
-                        (region or 'Unknown', country or 'Unknown')
+                        (region, country)
                     )
                     self.region_ids[region_key] = self.cursor.fetchone()[0]
                     self.conn.commit()
 
             region_id = self.region_ids[region_key]
 
-            # Try different geometry creation approaches
-            wkb = None
-            geojson = None
+            # Create the geometry
+            geometry = self._create_geometry(w)
+            if not geometry:
+                self.skipped_ways += 1
+                return
 
-            try:
-                # First approach: Standard OSM linestring creation
-                if any(node.location.valid() for node in w.nodes):
-                    wkb = wkb_factory.create_linestring(w)
-            except Exception as e:
-                logger.debug(f"Standard linestring creation failed for way {w.id}: {e}")
-
-            # Second approach: Build linestring from node cache if standard approach fails
-            if wkb is None:
-                try:
-                    coords = []
-                    for node in w.nodes:
-                        if node.ref in self.node_cache:
-                            coords.append(self.node_cache[node.ref])
-
-                    if len(coords) >= 2:
-                        line = LineString(coords)
-                        geojson = json.dumps(mapping(line))
-                        logger.debug(f"Created manual linestring for way {w.id} with {len(coords)} points")
-                    else:
-                        logger.debug(f"Not enough cached coordinates for way {w.id}: {len(coords)} points")
-                        self.skipped_ways += 1
-                        return
-                except Exception as e:
-                    logger.debug(f"Manual linestring creation failed for way {w.id}: {e}")
-                    self.skipped_ways += 1
-                    return
-            else:
-                # Process WKB from standard approach
-                try:
-                    line = wkblib.loads(wkb, hex=True)
-                    if not line.is_empty:
-                        geojson = json.dumps(mapping(line))
-                    else:
-                        logger.debug(f"Empty linestring for way {w.id}")
-                        self.skipped_ways += 1
-                        return
-                except Exception as e:
-                    logger.debug(f"Error processing WKB for way {w.id}: {e}")
-                    self.skipped_ways += 1
-                    return
+            line, geojson = geometry
 
             # Calculate road length in meters
             length_meters = line.length * 111000  # Rough conversion from degrees to meters
 
-            # Store segment information
-            segment_data = {
+            # Generate logical road key for grouping
+            # Use a more sophisticated approach to group highways
+            road_key = self._get_road_key(tags, w.id)
+
+            # Create segment data
+            segment = {
                 'osm_way_id': w.id,
                 'geometry': geojson,
                 'length_meters': length_meters,
                 'start_node_id': w.nodes[0].ref if len(w.nodes) > 0 else None,
                 'end_node_id': w.nodes[-1].ref if len(w.nodes) > 0 else None,
-                'tags': json.dumps(tags)
+                'tags': tags,
+                'road_type': highway_type,
+                'country': country,
+                'region_id': region_id,
+                'line': line  # Store line object for possible merging
             }
 
-            # Group by name for road association
-            road_key = name if name else f"unnamed_road_{w.id}"
+            # Add segment to appropriate road group
+            self.road_groups[road_key].append(segment)
 
-            # Store road information if it's not already in our records
-            if road_key not in self.road_ids:
-                # Insert the road record
+        except Exception as e:
+            logger.error(f"Error processing way {w.id}: {e}")
+            self.skipped_ways += 1
+
+    def _get_road_key(self, tags, way_id):
+        """
+        Generates a logical key for grouping road segments.
+        Prioritizes:
+        1. ref tag (M1, M4, etc.)
+        2. route number
+        3. name
+        4. road_number
+        """
+        # For motorways, the ref is the most important identifier
+        if 'ref' in tags:
+            ref = tags['ref'].strip()
+            # For motorways with directional info
+            direction = tags.get('carriageway_ref', '').strip().upper()
+            if direction:
+                return f"REF:{ref}:{direction}"
+            return f"REF:{ref}"
+
+        # Try using name if available
+        if 'name' in tags and tags['name']:
+            return f"NAME:{tags['name']}"
+
+        # For routes
+        if 'route' in tags and 'route_number' in tags:
+            return f"ROUTE:{tags['route']}:{tags['route_number']}"
+
+        # If we get here, use any highway identifier we can find
+        for key in ['nat_ref', 'int_ref', 'network']:
+            if key in tags and tags[key]:
+                return f"{key.upper()}:{tags[key]}"
+
+        # Last resort - use the way ID with a prefix
+        return f"UNNAMED_HIGHWAY:{way_id}"
+
+    def _create_geometry(self, w):
+        """Creates a geometry from a way, returning (line, geojson) or None if failed"""
+        wkb = None
+
+        try:
+            # First approach: Standard OSM linestring creation
+            if any(node.location.valid() for node in w.nodes):
+                wkb = wkb_factory.create_linestring(w)
+        except Exception as e:
+            logger.debug(f"Standard linestring creation failed for way {w.id}: {e}")
+
+        # If standard approach failed, try with node cache
+        if wkb is None:
+            try:
+                coords = []
+                for node in w.nodes:
+                    if node.ref in self.node_cache:
+                        coords.append(self.node_cache[node.ref])
+
+                if len(coords) >= 2:
+                    line = LineString(coords)
+                    geojson = json.dumps(mapping(line))
+                    return (line, geojson)
+                else:
+                    logger.debug(f"Not enough cached coordinates for way {w.id}: {len(coords)} points")
+                    return None
+            except Exception as e:
+                logger.debug(f"Manual linestring creation failed for way {w.id}: {e}")
+                return None
+        else:
+            # Process WKB from standard approach
+            try:
+                line = wkblib.loads(wkb, hex=True)
+                if not line.is_empty:
+                    geojson = json.dumps(mapping(line))
+                    return (line, geojson)
+                else:
+                    logger.debug(f"Empty linestring for way {w.id}")
+                    return None
+            except Exception as e:
+                logger.debug(f"Error processing WKB for way {w.id}: {e}")
+                return None
+
+    def finalize(self):
+        """
+        Process all collected road groups and create roads and segments in the database.
+        This runs after all ways have been processed.
+        """
+        logger.info(f"Finalizing import: Creating roads from {len(self.road_groups)} groups")
+
+        # Process each road group
+        for road_key, segments in self.road_groups.items():
+            try:
+                # Use first segment for basic road properties
+                first_segment = segments[0]
+
+                # Generate a proper road name based on the segment tags
+                road_name = autofill_road_name_from_tags(first_segment['tags'])
+
+                # Use the first segment's OSM ID as the road OSM ID
+                road_osm_id = first_segment['osm_way_id']
+
+                # Insert the road
                 self.cursor.execute(
                     """
                     INSERT INTO roads
@@ -201,61 +257,60 @@ class RoadHandler(osmium.SimpleHandler):
                     RETURNING id
                     """,
                     (
-                        w.id,
-                        name,
-                        road_type,
-                        country,
-                        region_id,
-                        json.dumps(tags)
+                        road_osm_id,
+                        road_name,
+                        first_segment['road_type'],
+                        first_segment['country'],
+                        first_segment['region_id'],
+                        json.dumps(first_segment['tags'])
                     )
                 )
-                self.road_ids[road_key] = self.cursor.fetchone()[0]
+                road_id = self.cursor.fetchone()[0]
                 self.conn.commit()
                 self.road_count += 1
 
-            # Now insert the segment linked to this road
-            road_id = self.road_ids[road_key]
-            self.cursor.execute(
-                """
-                INSERT INTO road_segments
-                (road_id, osm_way_id, geometry, length_meters, start_node_id, end_node_id, tags)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (osm_way_id) DO UPDATE SET
-                road_id = EXCLUDED.road_id,
-                geometry = EXCLUDED.geometry,
-                length_meters = EXCLUDED.length_meters,
-                start_node_id = EXCLUDED.start_node_id,
-                end_node_id = EXCLUDED.end_node_id,
-                tags = EXCLUDED.tags
-                """,
-                (
-                    road_id,
-                    segment_data['osm_way_id'],
-                    segment_data['geometry'],
-                    segment_data['length_meters'],
-                    segment_data['start_node_id'],
-                    segment_data['end_node_id'],
-                    segment_data['tags']
-                )
-            )
-            self.conn.commit()
-            self.segment_count += 1
+                # Insert all segments for this road
+                for segment in segments:
+                    self.cursor.execute(
+                        """
+                        INSERT INTO road_segments
+                        (road_id, osm_way_id, geometry, length_meters, start_node_id, end_node_id, tags)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (osm_way_id) DO UPDATE SET
+                        road_id = EXCLUDED.road_id,
+                        geometry = EXCLUDED.geometry,
+                        length_meters = EXCLUDED.length_meters,
+                        start_node_id = EXCLUDED.start_node_id,
+                        end_node_id = EXCLUDED.end_node_id,
+                        tags = EXCLUDED.tags
+                        """,
+                        (
+                            road_id,
+                            segment['osm_way_id'],
+                            segment['geometry'],
+                            segment['length_meters'],
+                            segment['start_node_id'],
+                            segment['end_node_id'],
+                            json.dumps(segment['tags'])
+                        )
+                    )
+                    self.segment_count += 1
 
-            if self.segment_count % 100 == 0:
-                logger.info(f"Processed {self.segment_count} road segments")
+                self.conn.commit()
 
-        except Exception as e:
-            self.conn.rollback()
-            logger.error(f"Error processing way {w.id}: {e}")
-            self.skipped_ways += 1
+                if self.road_count % 10 == 0:
+                    logger.info(f"Created {self.road_count} roads with {self.segment_count} segments")
 
-    def finalize(self):
+            except Exception as e:
+                self.conn.rollback()
+                logger.error(f"Error finalizing road group {road_key}: {e}")
+
         logger.info(f"Total ways examined: {self.total_ways}")
         logger.info(f"Total highways found: {self.highways_found}")
-        logger.info(f"Total roads skipped: {self.skipped_ways}")
-        logger.info(f"Total roads created: {self.road_count}")
+        logger.info(f"Total ways skipped: {self.skipped_ways}")
+        logger.info(f"Total logical roads created: {self.road_count}")
         logger.info(f"Total road segments created: {self.segment_count}")
-
+        logger.info(f"Average segments per road: {self.segment_count / self.road_count if self.road_count else 0:.2f}")
 def fetch_roads_overpass(region="ireland"):
     """
     Fetches toll road data from Overpass API for a region.
@@ -724,7 +779,69 @@ def _insert_batch(conn, cursor, batch):
     except Exception as e:
         conn.rollback()
         logger.error(f"Error inserting batch: {e}")
+def autofill_road_name_from_tags(tags):
+    """
+    Autofills a road name from OpenStreetMap-like tags, aiming for uniqueness.
 
+    Prioritizes:
+    1. 'name' tag (if present)
+    2. 'ref' tag (e.g., "M4", "M6") - with carriageway differentiation if applicable
+    3. 'nat_ref' tag (e.g., "T7", "T3")
+    4. 'int_ref' tag (e.g., "E 01")
+
+    If none of these are found, returns a generic "Unnamed Road".
+
+    Always appends carriageway information if 'carriageway_ref' tag is present
+    to distinguish between carriageways (e.g., "M4 (E)" or "Main Street (N)").
+
+    Args:
+        tags (dict): Dictionary of road tags.
+
+    Returns:
+        str: Autogenerated road name, aiming for uniqueness.
+    """
+    if not tags:
+        return "Unnamed Road"  # Handle case with no tags
+
+    # Determine the base name from available tags
+    base_name = None
+
+    if "name" in tags and tags["name"]:
+        base_name = tags["name"]  # Use 'name' if available
+    elif "ref" in tags and tags["ref"]:
+        base_name = tags["ref"]  # Use 'ref' as primary fallback
+    elif "nat_ref" in tags and tags["nat_ref"]:
+        base_name = tags["nat_ref"]  # Use 'nat_ref' if 'ref' is missing
+    elif "int_ref" in tags and tags["int_ref"]:
+        # For int_ref, might have multiple refs like "E 01;E 16". Use the first one.
+        int_refs = tags["int_ref"].split(';')
+        if int_refs:
+            base_name = int_refs[0].strip()  # Use the first int_ref, strip whitespace
+
+    # If we couldn't find a base name, use a generic one
+    if not base_name:
+        road_type = tags.get("highway", "road")  # Try to get road type, default to "road"
+        base_name = f"Unnamed {road_type.capitalize()}"
+
+    # Always add carriageway reference in brackets if available
+    if "carriageway_ref" in tags and tags["carriageway_ref"]:
+        carriageway_ref = tags["carriageway_ref"].strip().upper()  # E, W, S, N
+        return f"{base_name} ({carriageway_ref})"
+
+    return base_name
+
+def autofill_mising_names():
+    # select all the roads with missing names
+    conn = get_cockroach_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, tags FROM roads WHERE name IS NULL")
+    rows = cursor.fetchall()
+    for row in rows:
+        id = row[0]
+        tags = row[1]
+        name = autofill_road_name_from_tags(tags)
+        cursor.execute("UPDATE roads SET name = %s WHERE id = %s", (name, id))
+    conn.commit()
 def main():
     """Main function to import OSM road data from local file"""
     # Ensure database is set up before proceeding
@@ -744,6 +861,8 @@ def main():
 
     # Import the data
     import_osm_roads(osm_file)
+
+    # autofill_mising_names()
 
     # Check if we've successfully imported roads
     conn = get_cockroach_connection()
