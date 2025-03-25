@@ -160,7 +160,7 @@ services:
       - booking-service-2
       - booking-service-3
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/health", "||", "exit", "1"]
+      test: ["CMD-SHELL", "curl -f http://localhost/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
