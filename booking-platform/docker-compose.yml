@@ -118,9 +118,6 @@ services:
     volumes:
       - cockroachdb_data:/cockroach/cockroach-data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-      - ./backup:/cockroach/cockroach-data/extern/1/backup
-      - ./init-cockroach.sh:/init-cockroach.sh
-    entrypoint: ["/bin/sh", "/init-cockroach.sh"]
     healthcheck:
       test: ["CMD", "cockroach", "sql", "--insecure", "-e", "SELECT 1"]
       interval: 10s
@@ -175,4 +172,4 @@ volumes:
   mongodb_data:
   cockroachdb_data:
   redis_data:
-  nginx_cache:
+  nginx_cache:  # Added for Nginx caching
