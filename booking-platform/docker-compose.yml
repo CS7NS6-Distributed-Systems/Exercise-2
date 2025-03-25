@@ -150,6 +150,11 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
       - nginx_cache:/var/cache/nginx  # Mount cache directory
       - ./nginx/html:/usr/share/nginx/html  # Mount custom error pages
+      - ./booking-service/app/static:/app/static
+    environment:
+      - BOOKING_SERVICE_HOST=${BOOKING_SERVICE_HOST}
+      - BOOKING_SERVICE_PORT=${BOOKING_SERVICE_PORT}
+      - NGINX_PORT=${NGINX_PORT}
     depends_on:
       - booking-service-1
       - booking-service-2

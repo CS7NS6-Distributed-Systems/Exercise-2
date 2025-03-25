@@ -3,7 +3,7 @@ FROM python:3.13-slim
 WORKDIR /app
 
 # Install curl for health checks
-RUN apt-get update && apt-get install -y curl && \
+RUN apt-get update && apt-get install -y curl netcat-openbsd && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
