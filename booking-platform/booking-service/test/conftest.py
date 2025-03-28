@@ -1,4 +1,8 @@
 # booking-service/tests/conftest.py
+
+import os
+os.environ["TESTING"] = "True"
+
 import pytest
 from app import app as flask_app
 from app.db import get_cockroach_connection, release_cockroach_connection
