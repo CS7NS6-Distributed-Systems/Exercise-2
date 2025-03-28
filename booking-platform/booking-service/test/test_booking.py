@@ -30,3 +30,39 @@ def test_create_booking_success(client, token):
         }
     )
     assert response.status_code in [200, 400]  # Depends on slot availability
+
+def test_cancel_booking(client, token):
+    # Create a booking first
+    create_resp = client.post(
+        "/booking/create-booking",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "bookings": [
+                {
+                    "road_id": "test-road-id",  # Use a real road ID
+                    "slots": [
+                        {
+                            "start_time": "2025-03-29T12:00:00+00:00",  # Must be a valid future time
+                            "slot_id": None
+                        }
+                    ],
+                    "quantity": 1
+                }
+            ],
+            "origin": "Test Origin",
+            "destination": "Test Destination"
+        }
+    )
+
+    assert create_resp.status_code == 200, f"Create booking failed: {create_resp.json}"
+    booking_id = create_resp.get_json().get("booking_id")
+
+    # Now cancel the booking
+    cancel_resp = client.post(
+        f"/booking/{booking_id}/cancel",
+        headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert cancel_resp.status_code == 200, f"Cancel failed: {cancel_resp.json}"
+    assert cancel_resp.get_json()["status"] == "cancelled"
+
