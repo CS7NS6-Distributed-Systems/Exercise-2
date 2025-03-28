@@ -1,26 +1,23 @@
-# tests/test_slots.py
+# booking-service/tests/test_slots.py
 
-def test_available_slots_success(client, token):
-    response = client.post(
+def test_slots_success(client, token, test_road_id):
+    resp = client.post(
         "/booking/available-slots",
         headers={"Authorization": f"Bearer {token}"},
-        json={
-            "road_ids": ["test-road-id"],
-            "duration_minutes": 15,
-            "distance_meters": 5000
-        }
+        json={"road_ids": [test_road_id], "duration_minutes": 10, "distance_meters": 1000}
     )
-    assert response.status_code == 200
-    assert "available_slots" in response.json
+    assert resp.status_code == 200
+    assert "available_slots" in resp.get_json()
 
-def test_available_slots_no_auth(client):
-    response = client.post("/booking/available-slots", json={})
-    assert response.status_code == 401
+def test_slots_no_auth(client, test_road_id):
+    resp = client.post("/booking/available-slots", json={"road_ids": [test_road_id]})
+    assert resp.status_code == 401
 
-def test_available_slots_missing_road_ids(client, token):
-    response = client.post(
+def test_slots_invalid_payload(client, token):
+    resp = client.post(
         "/booking/available-slots",
         headers={"Authorization": f"Bearer {token}"},
         json={}
     )
-    assert response.status_code == 400
+    assert resp.status_code == 400
+
