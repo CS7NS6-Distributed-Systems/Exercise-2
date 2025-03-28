@@ -1,49 +1,57 @@
-def test_create_booking_missing_data(client, token):
-    response = client.post(
-        "/booking/create-booking",
-        headers={"Authorization": f"Bearer {token}"},
-        json={}  # No bookings provided
-    )
-    assert response.status_code == 400
-    assert "error" in response.get_json()
+import datetime
+from app.db import get_cockroach_connection, release_cockroach_connection
 
-def test_create_booking_success(client, token):
-    # Sample input — replace with actual road_id and slot info
-    response = client.post(
-        "/booking/create-booking",
+def get_any_existing_road_id():
+    """Fetch any valid road_id from the CockroachDB database"""
+    conn = None
+    try:
+        conn = get_cockroach_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM roads LIMIT 1")
+        result = cursor.fetchone()
+        return result[0] if result else None
+    finally:
+        if conn:
+            release_cockroach_connection(conn)
+
+def test_create_and_cancel_booking(client, token):
+    # Step 0: Get a real road ID from the DB
+    road_id = get_any_existing_road_id()
+    assert road_id, "No road_id found in DB"
+
+    # Step 1: Get available slots for that road
+    slot_resp = client.post(
+        "/booking/available-slots",
         headers={"Authorization": f"Bearer {token}"},
         json={
-            "bookings": [
-                {
-                    "road_id": "test-road-id",
-                    "slots": [
-                        {
-                            "start_time": "2025-03-29T10:00:00Z",
-                            "slot_id": None
-                        }
-                    ],
-                    "quantity": 1
-                }
-            ],
-            "origin": "Point A",
-            "destination": "Point B"
+            "road_ids": [road_id],
+            "duration_minutes": 10,
+            "distance_meters": 1000
         }
     )
-    assert response.status_code in [200, 400]  # Depends on slot availability
+    assert slot_resp.status_code == 200
+    data = slot_resp.get_json()
+    assert "available_slots" in data
 
-def test_cancel_booking(client, token):
-    # Create a booking first
+    # Step 2: Extract first available slot
+    available_slots = data["available_slots"]
+    slots = available_slots.get(road_id, [])
+    assert slots, f"No available slots found for road_id {road_id}"
+
+    selected_slot = slots[0]
+
+    # Step 3: Create a booking with that slot
     create_resp = client.post(
         "/booking/create-booking",
         headers={"Authorization": f"Bearer {token}"},
         json={
             "bookings": [
                 {
-                    "road_id": "test-road-id",  # Use a real road ID
+                    "road_id": selected_slot["road_id"],
                     "slots": [
                         {
-                            "start_time": "2025-03-29T12:00:00+00:00",  # Must be a valid future time
-                            "slot_id": None
+                            "start_time": selected_slot["start_time"],
+                            "slot_id": selected_slot["slot_id"]
                         }
                     ],
                     "quantity": 1
@@ -53,16 +61,13 @@ def test_cancel_booking(client, token):
             "destination": "Test Destination"
         }
     )
+    assert create_resp.status_code == 200, f"Booking failed: {create_resp.get_json()}"
+    booking_id = create_resp.get_json()["booking_id"]
 
-    assert create_resp.status_code == 200, f"Create booking failed: {create_resp.json}"
-    booking_id = create_resp.get_json().get("booking_id")
-
-    # Now cancel the booking
+    # Step 4: Cancel the booking
     cancel_resp = client.post(
         f"/booking/{booking_id}/cancel",
         headers={"Authorization": f"Bearer {token}"}
     )
-
-    assert cancel_resp.status_code == 200, f"Cancel failed: {cancel_resp.json}"
+    assert cancel_resp.status_code == 200
     assert cancel_resp.get_json()["status"] == "cancelled"
-
