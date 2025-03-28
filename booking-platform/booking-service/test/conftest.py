@@ -9,6 +9,12 @@ from app.db import get_cockroach_connection, release_cockroach_connection
 import uuid
 import datetime
 
+# Reset DB before the test session starts
+@pytest.fixture(scope="session", autouse=True)
+def clean_db_once():
+    reset_test_db()
+    yield  # Allows other tests to run
+    
 def insert_test_user_and_road():
     #Insert a test user and road into the database.
     conn = get_cockroach_connection()
