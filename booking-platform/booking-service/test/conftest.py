@@ -1,4 +1,3 @@
-# tests/conftest.py
 import pytest
 from app import app as flask_app
 
@@ -14,6 +13,10 @@ def client(app):
     return app.test_client()
 
 @pytest.fixture
-def token():
-    # Return a valid token or generate one using the login endpoint
-    return "your_valid_jwt_token_here"
+def token(client):
+    login_response = client.post(
+        "/user/login",
+        json={"username": "testuser", "password": "testpassword"}
+    )
+    assert login_response.status_code == 200
+    return login_response.get_json()["access_token"]
