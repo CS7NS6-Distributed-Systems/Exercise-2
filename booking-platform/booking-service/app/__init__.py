@@ -28,3 +28,12 @@ def health_check():
 
 from app.user_routes import user_blueprint
 app.register_blueprint(user_blueprint, url_prefix='/user')
+
+from app.osm_routes import osm_blueprint
+app.register_blueprint(osm_blueprint, url_prefix='/osm')
+
+from app.admin_routes import admin_blueprint
+app.register_blueprint(admin_blueprint)
+
+from app.booking_routes import booking_blueprint
+app.register_blueprint(booking_blueprint, url_prefix='/booking')

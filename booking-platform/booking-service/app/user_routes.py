@@ -11,7 +11,7 @@ import logging
 
 from app import limiter
 from app.db import get_cockroach_connection, release_cockroach_connection, mongo_db, redis_client
-from app.const import ( 
+from app.const import (
     SESSION_EXPIRY_SECONDS,
     TOKEN_EXPIRY_HOURS,
     COCKROACHDB_USERS_TABLE,
@@ -52,6 +52,7 @@ def session_required(fn):
 @user_blueprint.route("/register", methods=["POST"])
 @limiter.limit(RATE_LIMIT_REGISTER)
 def register():
+    cockroach_conn = None
     try:
         givennames = request.form.get("givennames")
         lastname = request.form.get("lastname")
@@ -59,8 +60,24 @@ def register():
         password = request.form.get("password")
         license_img = request.files.get("license_img")
 
-        if not all([givennames, lastname, username, password, license_img]):
-            return jsonify({"error": ERROR_MISSING_FIELDS}), 400
+        # Check for missing fields
+        missing_fields = []
+        if not givennames:
+            missing_fields.append("givennames")
+        if not lastname:
+            missing_fields.append("lastname")
+        if not username:
+            missing_fields.append("username")
+        if not password:
+            missing_fields.append("password")
+        if not license_img:
+            missing_fields.append("license_img")
+
+        if missing_fields:
+            return jsonify({
+            "error": ERROR_MISSING_FIELDS,
+            "missing_fields": missing_fields
+            }), 400
 
         hashed_password = bcrypt.generate_password_hash(password).decode("utf-8")
 
@@ -97,11 +114,13 @@ def register():
         logger.error(f"Unexpected error: {str(e)}")
         return jsonify({"error": ERROR_UNEXPECTED, "details": str(e)}), 500
     finally:
-        release_cockroach_connection(cockroach_conn)
+        if cockroach_conn:
+            release_cockroach_connection(cockroach_conn)
 
 @user_blueprint.route("/login", methods=["POST"])
 @limiter.limit(RATE_LIMIT_LOGIN)
 def login():
+    cockroach_conn = None
     try:
         username = request.form.get("username")
         password = request.form.get("password")
@@ -131,7 +150,8 @@ def login():
         logger.error(f"Unexpected error: {str(e)}")
         return jsonify({"error": ERROR_UNEXPECTED, "details": str(e)}), 500
     finally:
-        release_cockroach_connection(cockroach_conn)
+        if cockroach_conn:
+            release_cockroach_connection(cockroach_conn)
 
 @user_blueprint.route("/logout", methods=["POST"])
 @session_required
