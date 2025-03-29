@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Log that the container is starting
+echo "Starting booking service container..."
+
 sleep 20
 # Wait for the database to be ready
 echo "Waiting for CockroachDB to be ready..."
@@ -19,4 +22,4 @@ done
 
 # Start the Flask application
 echo "Starting the Flask application..."
-gunicorn --bind 0.0.0.0:5000 app.app:app
+gunicorn --bind 0.0.0.0:5000 app.app:app 

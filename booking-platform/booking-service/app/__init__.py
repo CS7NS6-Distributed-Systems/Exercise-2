@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, jsonify
 from flask_jwt_extended import JWTManager
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -15,6 +15,16 @@ limiter = Limiter(
     app=app,
     default_limits=os.getenv("RATE_LIMIT_GLOBAL", "200 per day, 50 per hour").split(", "),
 )
+
+# Add health check endpoint for Nginx load balancer
+@app.route('/health', methods=['GET'])
+def health_check():
+    service_instance = os.getenv('SERVICE_INSTANCE', 'unknown')
+    return jsonify({
+        'status': 'healthy',
+        'service': 'booking-service',
+        'instance': service_instance
+    }), 200
 
 from app.user_routes import user_blueprint
 app.register_blueprint(user_blueprint, url_prefix='/user')
