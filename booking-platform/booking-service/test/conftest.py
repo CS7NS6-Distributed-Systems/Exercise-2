@@ -23,12 +23,24 @@ def insert_test_user_and_road():
 
     # Insert user
     username = "testuser"
-    password = "testpassword"  # In production this would be hashed
+    password = "testpassword"
+    givennames = "Test"
+    lastname = "User"
+    license_image_id = "test_license_img_001"
     cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
     result = cursor.fetchone()
     if not result:
-        cursor.execute("INSERT INTO users (id, username, password) VALUES (%s, %s, %s)",
-                       (str(uuid.uuid4()), username, password))
+        cursor.execute("""
+            INSERT INTO users (id, username, password, givennames, lastname, license_image_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (
+            str(uuid.uuid4()),
+            username,
+            password,
+            givennames,
+            lastname,
+            license_image_id
+        ))
 
     # Insert road
     road_id = str(uuid.uuid4())
