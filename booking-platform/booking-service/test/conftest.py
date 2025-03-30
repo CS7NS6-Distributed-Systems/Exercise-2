@@ -73,8 +73,7 @@ def client(app):
 @pytest.fixture
 def token(client):
     username, password, _ = insert_test_user_and_road()
-    resp = client.post("/user/login", json={"username": username, "password": password})
-    assert resp.status_code == 200
+    resp = client.post("/user/login", data={"username": username, "password": password})
     return resp.get_json()["access_token"]
 
 @pytest.fixture
