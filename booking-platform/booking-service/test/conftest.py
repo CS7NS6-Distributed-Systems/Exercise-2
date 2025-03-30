@@ -53,7 +53,12 @@ def insert_test_user_and_road():
     else:
         road_id = existing[0]
 
-    release_cockroach_connection(conn)
+    try:
+        release_cockroach_connection(conn)
+    except Exception as e:
+        print(f"Warning: failed to release conn - {e}")
+        conn.close()
+
     return username, password, road_id
 
 @pytest.fixture
