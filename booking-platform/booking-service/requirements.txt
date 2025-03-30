@@ -22,3 +22,4 @@ networkx==3.4.2
 
 pytest
 pytest-flask
+werkzeug==2.3.8
