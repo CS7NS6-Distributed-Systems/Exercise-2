@@ -62,6 +62,16 @@ def insert_test_user_and_road():
         print(f"Warning: failed to release conn - {e}")
         conn.close()
 
+    # Insert booking slot
+    slot_id = str(uuid.uuid4())
+    now = datetime.datetime.utcnow().replace(microsecond=0)
+    cursor.execute("""
+        INSERT INTO road_booking_slots (road_booking_slot_id, road_id, slot_time, capacity, available_capacity)
+        VALUES (%s, %s, %s, %s, %s)
+    """, (slot_id, road_id, now, 10, 10))
+
+    conn.commit()
+    
     return username, password, road_id
 
 @pytest.fixture
