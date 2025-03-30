@@ -42,8 +42,9 @@ def test_booking_flow(client, test_road_id):
     username, password = register_random_user(client)
     token = login(client, username, password)
 
-    create_resp = client.post(
-        "/booking/create-booking",
+    # 1. Get available slots for the test road
+    slots_resp = client.post(
+        "/booking/available-slots",
         headers={"Authorization": f"Bearer {token}"},
         json={
             "road_ids": [test_road_id],
@@ -51,13 +52,37 @@ def test_booking_flow(client, test_road_id):
             "distance_meters": 3000
         }
     )
-    assert create_resp.status_code == 200
-    booking_id = create_resp.get_json()["booking_id"]
+    assert slots_resp.status_code == 200
+    slots_data = slots_resp.get_json()
+    road_slots = slots_data["available_slots"].get(test_road_id)
+    assert road_slots and len(road_slots) > 0
 
-    bookings_resp = client.get("/booking/user-bookings", headers={"Authorization": f"Bearer {token}"})
-    assert bookings_resp.status_code == 200
-    bookings = bookings_resp.get_json()["bookings"]
-    assert any(b["booking_id"] == booking_id for b in bookings)
+    first_slot = road_slots[0]
+    slot_payload = {
+        "start_time": first_slot["start_time"],
+        "slot_id": first_slot["slot_id"]  # could be None if not yet created
+    }
+
+    # 2. Make a booking
+    create_resp = client.post(
+        "/booking/create-booking",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "origin": "Dublin",
+            "destination": "Cork",
+            "bookings": [
+                {
+                    "road_id": test_road_id,
+                    "slots": [slot_payload],
+                    "quantity": 1
+                }
+            ]
+        }
+    )
+    assert create_resp.status_code == 200
+    booking_data = create_resp.get_json()
+    assert booking_data.get("success") is True
+    assert booking_data.get("booking_id") is not None
 
 # ---- Scenario 3: Access protected endpoint without token ----
 def test_unauthorized_access_to_profile(client):
