@@ -9,6 +9,7 @@ from app.db import get_cockroach_connection, release_cockroach_connection
 import uuid
 import datetime
 from test.db_reset import reset_test_db
+from flask_bcrypt import Bcrypt
 
 # Reset DB before the test session starts
 @pytest.fixture(scope="session", autouse=True)
@@ -24,6 +25,8 @@ def insert_test_user_and_road():
     # Insert user
     username = "testuser"
     password = "testpassword"
+    bcrypt = Bcrypt()
+    hashed_password = bcrypt.generate_password_hash(password).decode("utf-8")
     givennames = "Test"
     lastname = "User"
     license_image_id = "test_license_img_001"
@@ -36,7 +39,7 @@ def insert_test_user_and_road():
         """, (
             str(uuid.uuid4()),
             username,
-            password,
+            hashed_password,
             givennames,
             lastname,
             license_image_id
