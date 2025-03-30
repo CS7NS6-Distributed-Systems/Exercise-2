@@ -42,7 +42,7 @@ def get_cockroach_connection():
         dbname=db_name,
         sslmode="disable"
     )
-    return conn
+    return cockroach_pool.getconn()
 
 
 # function to release the cockroach connection to pool
