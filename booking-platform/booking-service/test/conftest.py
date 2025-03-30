@@ -8,6 +8,7 @@ from app import app as flask_app
 from app.db import get_cockroach_connection, release_cockroach_connection
 import uuid
 import datetime
+from test.db_reset import reset_test_db
 
 # Reset DB before the test session starts
 @pytest.fixture(scope="session", autouse=True)
