@@ -214,6 +214,12 @@ def create_route_booking(username, bookings_data, origin, destination):
 
             for slot in slots:
                 slot_start = datetime.fromisoformat(slot.get('start_time').replace('Z', '+00:00'))
+                if slot_start < datetime.now():
+                    conn.rollback()
+                    return {
+                        'success': False,
+                        'error': "Booking failed: Cannot book a past time slot"
+                    }
                 slot_id = slot.get('slot_id')
 
                 if slot_id:

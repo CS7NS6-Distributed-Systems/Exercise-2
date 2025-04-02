@@ -24,6 +24,8 @@ RUN pip install --upgrade pip
 RUN pip install setuptools wheel
 RUN pip install setuptools wheel
 RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install pytest pytest-cov pytest-flask
+RUN pip install faker
 
 COPY . .
 

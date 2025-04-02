@@ -13,7 +13,8 @@ jwt = JWTManager(app)
 limiter = Limiter(
     get_remote_address,
     app=app,
-    default_limits=os.getenv("RATE_LIMIT_GLOBAL", "200 per day, 50 per hour").split(", "),
+    enabled=not os.environ.get("TESTING") == "True",
+    default_limits=os.getenv("RATE_LIMIT_GLOBAL", "200 per day, 50 per hour").split(", ")
 )
 
 # Add health check endpoint for Nginx load balancer

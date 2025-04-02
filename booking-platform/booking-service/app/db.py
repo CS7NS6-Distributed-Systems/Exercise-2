@@ -32,7 +32,18 @@ cockroach_pool = pool.SimpleConnectionPool(
 
 # function to get a cockroach connection from pool
 def get_cockroach_connection():
+    import psycopg2
+    db_name = "booking_test" if os.getenv("TESTING", "False") == "True" else "booking"
+    conn = psycopg2.connect(
+        host=os.getenv("COCKROACHDB_HOST", "localhost"),
+        port=os.getenv("COCKROACHDB_PORT", 26257),
+        user=os.getenv("DB_USER", "root"),
+        password=os.getenv("DB_PASSWORD", ""),
+        dbname=db_name,
+        sslmode="disable"
+    )
     return cockroach_pool.getconn()
+
 
 # function to release the cockroach connection to pool
 def release_cockroach_connection(conn):
@@ -41,3 +52,4 @@ def release_cockroach_connection(conn):
             cockroach_pool.putconn(conn)
     except psycopg2.DatabaseError as e:
         print(f"Error releasing CockroachDB connection: {e}")
+
